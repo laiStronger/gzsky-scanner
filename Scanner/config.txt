@@ -1,0 +1,35 @@
+//192.168.101.3的更新时间:2011-05-23 09:25:43
+//采用的驱动类
+ClassName=oracle.jdbc.driver.OracleDriver
+
+//数据库连接串
+//jdbc:oracle:thin:@192.168.100.231:1522:mpptest
+//jdbc:oracle:thin:@192.168.101.4:1521:gmcctes
+//jdbc:oracle:thin:@192.168.101.13:1521:gmccmpp1
+Url=jdbc:oracle:thin:@192.168.100.231:1522:mpptest
+
+//用户名
+UserName=gmcc
+
+//密码
+//skywin
+//gmcc
+UserPwd=skywin
+
+//话单文件目录
+Directory_Data=F:/Temp/
+
+//话单文件的备份目录
+Directory_BackUp=F:/Temp/BackUp/
+
+//每天进行扫描的时间段,生成前一天的话单文件
+EveryDay=23:49:59-23:59:59
+
+//线程进行轮循时每次休眠的时间,单位:毫秒
+SleepTimes=10*60*1000
+
+//查询标志位  0:查询所有的交易记录，包括0元交易记录  1:只查询0元的交易记录  2:只查询金额大于0的交易记录
+Flag=1
+
+//要进行扫描的SPID及其对应的服务商提供代码,之间用,(逗号)分隔,每个SPID之间用;(分号)分隔
+SpIDs=419737,419738;419738,419738;419739,419739;919411,950131;919127,950182
