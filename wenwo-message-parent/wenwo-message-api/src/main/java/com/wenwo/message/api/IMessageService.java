@@ -1,0 +1,237 @@
+package com.wenwo.message.api;
+
+import java.util.List;
+import java.util.Map;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import com.wenwo.message.entity.MessageParameter;
+import com.wenwo.message.entity.OpenUserInfo;
+import com.wenwo.message.enums.MainType;
+import com.wenwo.message.model.MessageError;
+import com.wenwo.message.model.MessageInsite;
+import com.wenwo.platform.exception.WenwoException;
+import com.wenwo.platform.types.WeiboType;
+import com.wenwo.platform.types.project.SubprojectType;
+
+
+/**
+ * 消息系统的通用接口，之前的版本不具备灵活扩展性。注意，发送消息和获取站内消息的接口都在这里，之前在平台里的逻辑，迁移到这里来。
+ * 也就是说，跟消息相关的任何操作，都封装在消息系统。这是基于逻辑解耦的考虑：对“消息”的操作，应该只有消息系统本身，独立于其它任何系统
+ * 
+ * 以后消息数据存储于message这个数据库。
+ * 
+ * 上线后，老接口要把收到的请求转发到新接口；老接口要标明过期，并说明新接口的调用方式
+ * 
+ * @author StanleyDing
+ * @date 2013-9-22
+ * @since 2.0
+ * 
+ * History：
+ * Date,	By,		What
+ * 2013-9-22,	StanleyDing, 	Create
+ */
+public interface IMessageService {
+	
+	
+
+	/*
+	 * 消息测试
+	 */
+	public String sendExternalMessage(String messageType,SubprojectType subprojectType,MessageParameter parameter);
+	/**
+	 * 给某个问我用户发送消息，至于要发送到那些频道（站内、app站内、push、微博），根据messageType的配置而定
+	 * @param messageType 消息类型的编码，由人工配置
+	 * @param targetUid 这条发送发送的目标用户的问我ID
+	 * @param subprojectType 当前触发这条消息所述项目
+	 * @param parameter 消息参数
+	 * @return
+	 */
+	public String sendMessage(String messageType, String targetUid, SubprojectType subprojectType, MessageParameter parameter);
+	/**
+	 * 给一系列的问我用户发送消息，至于要发送到那些频道（站内、app站内、push、微博），根据messageType的配置而定
+	 * @param messageType 消息类型的编码，由人工配置
+	 * @param targetUidList 这条发送发送的目标用户的问我ID列表
+	 * @param subprojectType 当前触发这条消息所述项目
+	 * @param parameter 消息参数
+	 */
+	public String sendMessage(String messageType, List<String> targetUidList, SubprojectType subprojectType, MessageParameter parameter);
+	
+	/**
+	 * 有些消息只需要发送微博@，例如之前的newMatchUser，绝大部分用户都还不是问我用户，而且发了@之后，也只有2%的用户会进来到问我，这些用户创建一个问我用户，没有意义。
+	 * 所以，提供这个接口，让调用者直接传openUid，消息系统会去判断该openUid是否在用户表存在，如粗在则所有消息频道都发送消息，否则，只发送微博频道。
+	 * @param messageType 消息类型的编码，由人工配置
+	 * @param targetOpenUid 这条发送发送的目标用户的openUid
+	 * @param subprojectType 当前触发这条消息所述项目
+	 * @param parameter 消息参数
+	 */
+	public String sendMessageWithOpenUid(String messageType, OpenUserInfo openUser, SubprojectType subprojectType, MessageParameter parameter);
+	/**
+	 * 有些消息只需要发送微博@，例如之前的newMatchUser，绝大部分用户都还不是问我用户，而且发了@之后，也只有2%的用户会进来到问我，这些用户创建一个问我用户，没有意义。
+	 * 所以，提供这个接口，让调用者直接传openUid，消息系统会去判断该openUid是否在用户表存在，如粗在则所有消息频道都发送消息，否则，只发送微博频道。
+	 * @param messageType 消息类型的编码，由人工配置
+	 * @param targetOpenUidList
+	 * @param subprojectType 当前触发这条消息所述项目
+	 * @param parameter 消息参数
+	 */
+	public String sendMessageWithOpenUid(String messageType, List<OpenUserInfo> targetOpenUserList, SubprojectType subprojectType, MessageParameter parameter);
+	
+	/**
+	 * 同步同（分享）的接口，这和上面的“消息”接口的意义完全不同。“消息”是用官方的身份去通知用户，“同步”或者“分享”则是以用户本身的身份发送微博。
+	 * 分享接口只发微博，无任何站内消息。
+	 * @param shareType
+	 * @param actionUid
+	 * @param jsonData
+	 */
+	public String share(String shareType, String actionUid, SubprojectType subprojectType, MessageParameter parameter);
+
+	
+	/**
+	 * 获取pc和m版的站内消息，
+	 * app获取参照：{@link #getMobileMessagesList(String, MainType, Pageable)}
+	 * 获取某个主分类下的消息列表
+	 * 已经取出的消息，要设置为已读
+	 * @param userId
+	 * @param messageType 如果传null 那么返回的是全部
+	 * @param pageInfo
+	 * @param sort
+	 * @return
+	 */
+	Page<MessageInsite> getMessagesList(String userId, MainType messageType, Pageable pageInfo);
+	
+	/**
+	 * 获取web未读消息数
+	 * 手机获取使用:{@link #getMobileUnreadMessageCount(String)}
+	 * @param userId
+	 * @param subProjectType
+	 * @param type
+	 * @return
+	 * @throws WenwoException
+	 */
+	public int getUnreadMessageCount(String userId, MainType type);
+	
+	/**
+	 * 获取未读消息数
+	 * 手机获取使用:{@link #getMobileUnreadMessageCount(String)}
+	 * @param userId
+	 * @param subProjectType
+	 * @param type
+	 * @return 消息主分类---->未读消息数的map
+	 * @throws WenwoException
+	 */
+	public Map<MainType, Integer> getUnreadMessageCount(String userId);
+	
+
+	/**
+	 * 获取某个主分类下的存在手机消息的站内消息
+	 * @param userId
+	 * @param messageType 如果传null 那么返回的是全部
+	 * @param pageInfo
+	 * @param subprojectType
+	 * @return
+	 */
+	public Page<MessageInsite> getMobileMessagesList(String userId,  MainType messageType, Pageable pageInfo);
+	
+	
+	public Page<MessageInsite> getMobileMessagesList(String userId,  MainType messageType, Pageable pageInfo,int type);
+	
+	
+	/**
+	 * 获取手机未读站内消息数
+	 * @param userId
+	 * @param subProjectType
+	 * @param type
+	 * @return
+	 * @throws WenwoException
+	 */
+	public int getMobileUnreadMessageCount(String userId, MainType type);
+	
+	/**
+	 * 获取手机未读站内消息数(微问医生)
+	 * @param userId
+	 * @param type
+	 * @param subProjectType
+	 * @return
+	 */
+	public int getMobileUnreadMessageCount(String userId, MainType type,int subProjectType);
+	
+	/**
+	 * 获取未读消息数
+	 * @param userId
+	 * @param subProjectType
+	 * @param type
+	 * @return 消息主分类---->未读消息数的map
+	 * @throws WenwoException
+	 */
+	public Map<MainType, Integer> getMobileUnreadMessageCount(String userId);
+	
+	/**
+	 * 把跟这些答案ID相关的消息设置为已读
+	 * @param answerIds
+	 * @return
+	 */
+	public int setAnswerMsgRead(String userId, String messageType, List<String> answerIds);
+	
+	/** 
+	 * 定时任务里抓取评论作为答案时，到消息表里查询这个评论的微博是因为哪个问题而发送，进而才可以确定这个评论是哪个问题的答案
+	 * 之前定时任务直接读的数据库，新消息系统上线后应该改为调用这个方法
+	 * @param weiboId
+	 * @return
+	 */
+	public String getQuestionIdByWeiboId(String weiboId);
+	
+	/**
+	 * 定时任务里有一个逻辑，针对“新答案”的@通知，如果提问者评论了这条@，会抓回来作为追问，之前是直接查消息表以确定某一条评论对应那一个答案
+	 * 以后应调用这个方法
+	 * @param weiboId
+	 * @return
+	 */
+	public String getAnswerIdByWeiboId(String weiboId);
+	
+	/**
+	 * 将用户消息设为已读
+	 * @param userId
+	 * @param mainType
+	 */
+	public void setMessageRead(List<String> uniqueIdList);
+	
+	public void setMessageRead(Page<MessageInsite> messagePage);
+	
+	/**
+	 * 获取android push消息，本接口供gpn轮询使用
+	 * @return Object Json格式
+	 */
+	public List<Object> getAndroidPushMessage(String targetUid, SubprojectType subprojectType);
+	
+	/**
+	 * 根据用户Id和消息Id获取消息
+	 * @param targetUid
+	 * @param messageId
+	 * @return
+	 */
+	public List<MessageInsite> getMessageInsite(String targetUid,String messageId);
+	
+	/**
+	 * 根据用户Id和消息Id获取错误日志消息
+	 * @param targetUid
+	 * @param messageId
+	 * @return
+	 */
+	public List<MessageError> getMessageError(String targetUid,String messageId);
+	
+	/**
+	 * 删除doctor集合消息的hash集合，根据用户id，和目标id（questionid或者answerid）
+	 * @param targetUidList
+	 * @param targetId
+	 */
+	public void delHashBatchMessage(List<String> targetUidList, String targetId);
+	
+	/**
+	 * 保存SpecialWeiboLog到20数据库
+	 * @param weiboUid
+	 * @param weiboType
+	 * @param projectType
+	 * @param type
+	 */
+	public void saveSpecialWeiboLog(String weiboUid,WeiboType weiboType,SubprojectType projectType,int type);
+		
+}

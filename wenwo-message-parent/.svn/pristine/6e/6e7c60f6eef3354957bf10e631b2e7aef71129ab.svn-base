@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+	 xmlns:util="http://www.springframework.org/schema/util"
+	 xsi:schemaLocation="http://www.springframework.org/schema/context
+          http://www.springframework.org/schema/context/spring-context-3.1.xsd
+          http://www.springframework.org/schema/util
+          http://www.springframework.org/schema/util/spring-util-3.1.xsd
+          http://www.springframework.org/schema/beans
+          http://www.springframework.org/schema/beans/spring-beans-3.1.xsd" default-autowire="byName">
+	
+	<!-- 微问 -->
+	<bean id="weiwendev" class="com.wenwo.message.utils.AppleNotificationServerFactory.CertInfo" >
+		<constructor-arg value="cert_weiwen_dev.p12"/>
+		<constructor-arg value="hj197882"/>
+	</bean>
+	
+	<bean id="weiwenpro" class="com.wenwo.message.utils.AppleNotificationServerFactory.CertInfo" >
+		<constructor-arg value="cert_weiwen_product.p12"/>
+		<constructor-arg value="hj197882"/>
+	</bean>
+	
+	<bean id="appleNotificationServerFactory" class="com.wenwo.message.utils.AppleNotificationServerFactory">
+		<constructor-arg index="0" ref="weiwendev" />
+		<constructor-arg index="1" ref="weiwenpro"/>
+	</bean>	
+	
+	<!-- 微问医生 -->
+	<bean id="drweiwendev" class="com.wenwo.message.utils.AppleNotificationServerFactory.CertInfo" >
+		<constructor-arg value="doctor_push_dev.p12"/>
+		<constructor-arg value="hj123456"/>
+	</bean>
+	
+	<bean id="drweiwenpro" class="com.wenwo.message.utils.AppleNotificationServerFactory.CertInfo" >
+		<constructor-arg value="doctor_push_pdt.p12"/>
+		<constructor-arg value="hj123456"/>
+	</bean>
+	
+	<bean id="drAppleNotificationServerFactory" class="com.wenwo.message.utils.AppleNotificationServerFactory">
+		<constructor-arg index="0" ref="drweiwendev" />
+		<constructor-arg index="1" ref="drweiwenpro"/>
+	</bean>	
+	
+	<!-- 患者 -->
+	<bean id="patientdev" class="com.wenwo.message.utils.AppleNotificationServerFactory.CertInfo" >
+		<constructor-arg value="patient_push_dev.p12"/>
+		<constructor-arg value="123456"/>
+	</bean>
+	
+	<bean id="patientpro" class="com.wenwo.message.utils.AppleNotificationServerFactory.CertInfo" >
+		<constructor-arg value="patient_push_dis.p12"/>
+		<constructor-arg value="123456"/>
+	</bean>
+	
+	<bean id="patientAppleNotificationServerFactory" class="com.wenwo.message.utils.AppleNotificationServerFactory">
+		<constructor-arg index="0" ref="patientdev" />
+		<constructor-arg index="1" ref="patientpro"/>
+	</bean>	
+	
+	
+	
+	<!-- 图片 -->
+	<bean id="jMagickImageBuilder" class="com.wenwo.message.im4java.JMagickImageBuilder">
+	  <!-- <constructor-arg index="0" value="/www/backimg" /> -->
+	  <constructor-arg index="0" value="E:\svnClient\wenwo-message-parent\wenwo-message-process\src\main\image" />
+	</bean>	
+</beans>

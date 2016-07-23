@@ -1,0 +1,24 @@
+-classpath
+'E:/svnClient/wenwo-message-parent/wenwo-message-entity/target/classes;E:/maven/repo/commons-lang/commons-lang/2.6/commons-lang-2.6.jar;E:/maven/repo/org/springframework/data/spring-data-mongodb/1.2.3.RELEASE/spring-data-mongodb-1.2.3.RELEASE.jar;E:/maven/repo/com/google/code/gson/gson/2.2.4/gson-2.2.4.jar;E:/maven/repo/org/jvnet/hudson/dom4j/dom4j/1.6.1-hudson-3/dom4j-1.6.1-hudson-3.jar;E:/maven/repo/org/springframework/spring-beans/3.1.4.RELEASE/spring-beans-3.1.4.RELEASE.jar;E:/maven/repo/org/apache/httpcomponents/httpcore/4.2.2/httpcore-4.2.2.jar;E:/maven/repo/org/springframework/spring-core/3.2.4.RELEASE/spring-core-3.2.4.RELEASE.jar;E:/maven/repo/commons-beanutils/commons-beanutils/1.7.0/commons-beanutils-1.7.0.jar;E:/maven/repo/org/springframework/spring-asm/3.0.7.RELEASE/spring-asm-3.0.7.RELEASE.jar;E:/maven/repo/org/springframework/data/spring-data-commons/1.5.2.RELEASE/spring-data-commons-1.5.2.RELEASE.jar;E:/maven/repo/jaxen/jaxen/1.1.4/jaxen-1.1.4.jar;E:/maven/repo/org/springframework/security/spring-security-core/3.1.4.RELEASE/spring-security-core-3.1.4.RELEASE.jar;E:/maven/repo/org/springframework/spring-aop/3.0.7.RELEASE/spring-aop-3.0.7.RELEASE.jar;E:/maven/repo/ch/qos/logback/logback-classic/1.0.11/logback-classic-1.0.11.jar;E:/maven/repo/org/springframework/spring-expression/3.1.4.RELEASE/spring-expression-3.1.4.RELEASE.jar;E:/maven/repo/commons-logging/commons-logging/1.0.3/commons-logging-1.0.3.jar;E:/maven/repo/org/springframework/spring-context/3.2.4.RELEASE/spring-context-3.2.4.RELEASE.jar;E:/maven/repo/com/wenwo/platform/wenwo-platform-common/2.0.0-SNAPSHOT/wenwo-platform-common-2.0.0-SNAPSHOT.jar;E:/maven/repo/ch/qos/logback/logback-core/1.0.11/logback-core-1.0.11.jar;E:/maven/repo/org/apache/httpcomponents/httpclient/4.2.3/httpclient-4.2.3.jar;E:/svnClient/wenwo-message-parent/wenwo-message-common/target/wenwo-message-common-2.0.0-SNAPSHOT.jar;E:/maven/repo/org/slf4j/slf4j-api/1.7.1/slf4j-api-1.7.1.jar;E:/maven/repo/aopalliance/aopalliance/1.0/aopalliance-1.0.jar;E:/maven/repo/org/mongodb/mongo-java-driver/2.10.1/mongo-java-driver-2.10.1.jar;E:/maven/repo/commons-codec/commons-codec/1.7/commons-codec-1.7.jar;E:/maven/repo/org/springframework/spring-tx/3.1.4.RELEASE/spring-tx-3.1.4.RELEASE.jar'
+-encoding
+'UTF-8'
+-protected
+-sourcepath
+'E:/svnClient/wenwo-message-parent/wenwo-message-entity/src/main/java'
+-author
+-bottom
+'Copyright &#169; 2015. All rights reserved.'
+-charset
+'UTF-8'
+-d
+'E:/svnClient/wenwo-message-parent/wenwo-message-entity/target/apidocs'
+-docencoding
+'UTF-8'
+-doctitle
+'wenwo-message-entity 2.0.0-SNAPSHOT API'
+-linkoffline
+'http://docs.oracle.com/javase/7/docs/api' 'E:/svnClient/wenwo-message-parent/wenwo-message-entity/target/javadoc-bundle-options'
+-use
+-version
+-windowtitle
+'wenwo-message-entity 2.0.0-SNAPSHOT API'

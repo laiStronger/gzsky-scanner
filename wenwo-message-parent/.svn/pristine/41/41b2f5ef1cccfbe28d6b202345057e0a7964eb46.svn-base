@@ -1,0 +1,167 @@
+package com.wenwo.message.endpoint.filter;
+
+import java.util.ArrayList;
+import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+
+
+/**
+ * filter选择器
+ * @author laisq
+ *
+ */
+public class FilterSelector {
+
+	private List<IEndpointFilter> allFilterList = new ArrayList<IEndpointFilter>();
+	
+
+	@Autowired
+	private IEndpointFilter sinaqq_syncQuest_share_filter;
+	
+	@Autowired
+	private IEndpointFilter sinaqq_syncAnswer_share_filter;
+	
+	@Autowired
+	private IEndpointFilter sinaqq_all_weibo_filter;
+	
+	@Autowired
+	private IEndpointFilter sinaask_filter;
+	
+	@Autowired
+	private IEndpointFilter sinaask_all_share_filter;
+	
+	@Autowired
+	private IEndpointFilter doctor_question_weibo_filter;
+	
+	
+	/**
+	 * 选择
+	 */
+	public List<IEndpointFilter> select(String projectType,String messageType,String endpoint) {
+		List<IEndpointFilter> pointFilterList = new ArrayList<IEndpointFilter>();
+		
+		for(IEndpointFilter pointFilter : allFilterList) {
+			AbstractEndpointFilter abstractEndpointFilter = (AbstractEndpointFilter)pointFilter;
+        	
+			String endpointScope = abstractEndpointFilter.getEndpointScope();
+        	String messageTypeScope = abstractEndpointFilter.getMessageTypeScope();
+        	String projectScope = abstractEndpointFilter.getProjectScope();
+        	
+        	if(inProjectScope(projectScope,projectType) && inMessageTypeScope(messageTypeScope,messageType)
+        			&& inEndpointScope(endpointScope,endpoint)) {
+        		pointFilterList.add(getFilter(abstractEndpointFilter));
+        	}
+        	
+        }
+
+		/*int count = 0;
+		if(pointFilterList.size() > 0) {
+			count = count + 1;
+			System.out.println(projectType + ","+ messageType + "," + endpoint
+					+ ",总共大小：" + pointFilterList.size());
+			System.out.println("count:" + count);
+			for(IEndpointFilter filter: pointFilterList) {
+				System.out.println("filter.getClass():" + filter.getClass());
+			}
+		}*/
+        
+		return pointFilterList;
+	}
+	
+	/**
+	 * 得到filter
+	 * @param abstractEndpointFilter
+	 * @return
+	 */
+	public IEndpointFilter getFilter(AbstractEndpointFilter abstractEndpointFilter) {
+		IEndpointFilter filter = null;
+		if(abstractEndpointFilter instanceof SINAQQsyncQuestShareFilterImpl) {
+    		filter =  sinaqq_syncQuest_share_filter;
+    	} else if(abstractEndpointFilter instanceof SINAQQsyncAnswerShareFilterImpl) {
+    		filter =  sinaqq_syncAnswer_share_filter;
+    	} else if(abstractEndpointFilter instanceof SINAQQAllWeiboFilterImpl) {
+    		filter =  sinaqq_all_weibo_filter;
+    	} else if(abstractEndpointFilter instanceof SINAASKFilterImpl) {
+    		filter =  sinaask_filter;
+    	} else if(abstractEndpointFilter instanceof SINAASKAllShareFilterImpl) {
+    		filter =  sinaask_all_share_filter;
+    	} else if(abstractEndpointFilter instanceof DoctorQuestionWeiboFilterImpl) {
+    		filter =  doctor_question_weibo_filter;
+    	}
+		return filter;
+	}
+	
+	
+	/**
+	 * 判断subprojectType的范围
+	 * @param projectScope
+	 * @return
+	 */
+	private boolean inProjectScope(String projectTypeScope,String projectType) {
+		if(projectTypeScope.equals("all")) {
+        	return true;
+        } else {
+        	String[] projectTypeStr = projectTypeScope.split(",");
+        	
+        	for(int i=0;i<projectTypeStr.length;i++){
+        		if(projectType.equals(projectTypeStr[i])) {
+        			return true;
+        		}
+        	}
+        	return false;
+        }
+	}
+	
+	/**
+	 * 判断messageType的范围
+	 * @param messageTypeScope
+	 * @param messageType
+	 * @return
+	 */
+	private boolean inMessageTypeScope(String messageTypeScope,String messageType) {
+        if(messageTypeScope.equals("all")) {
+        	return true;
+        } else {
+        	String[] messageTypeStr = messageTypeScope.split(",");
+    		
+    		for(int i=0;i<messageTypeStr.length;i++){
+    			if(messageType.equals(messageTypeStr[i])) {
+    				return true;
+    			}
+    		}
+        }
+		return false;
+	}
+	
+	
+	/**
+	 * 判断endpoint的范围
+	 * @param endpointScope
+	 * @param endpoint
+	 * @return
+	 */
+	private boolean inEndpointScope(String endpointScope,String endpoint) {
+		if(endpointScope.equals("all")) {
+        	return true;
+        } else {
+        	String[] endpointScopeStr = endpointScope.split(",");
+    		
+    		for(int i=0;i<endpointScopeStr.length;i++){
+    			if(endpoint.equals(endpointScopeStr[i])) {
+    				return true;
+    			}
+    		}
+        }
+		return false;
+	}
+	
+	public List<IEndpointFilter> getAllFilterList() {
+		return allFilterList;
+	}
+
+	public void setAllFilterList(List<IEndpointFilter> allFilterList) {
+		this.allFilterList = allFilterList;
+	}
+	
+	
+}

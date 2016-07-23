@@ -1,0 +1,181 @@
+package com.wenwo.message.utils;
+
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.velocity.VelocityContext;
+import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.tencent.xinge.ClickAction;
+import com.tencent.xinge.Message;
+import com.tencent.xinge.Style;
+import com.tencent.xinge.TimeInterval;
+import com.tencent.xinge.XingeApp;
+import com.wenwo.message.constants.TemplateConstants;
+import com.wenwo.message.request.MessageRequest;
+import com.wenwo.platform.entity.Question;
+import com.wenwo.platform.entity.doctor.DrQuestion;
+import com.wenwo.platform.types.project.SubprojectType;
+
+
+public class XingeAppUtil {
+
+	 private static Logger logger = LoggerFactory.getLogger(XingeAppUtil.class);
+	  
+	 /**
+	  * 是否在10-20点之间
+	  * @return
+	  */
+	@SuppressWarnings("deprecation")
+	public static boolean isInTime() {
+		//开始时间
+		Date startTime = new Date();
+		startTime.setHours(10);
+		startTime.setMinutes(0);
+		startTime.setSeconds(0);
+		Long start = startTime.getTime();
+		
+		//结束时间
+		Date endTime = new Date();
+		endTime.setHours(20);
+		endTime.setMinutes(0);
+		endTime.setSeconds(0);
+		Long end = endTime.getTime();
+		
+		Long now = new Date().getTime();
+		if(now > start && now < end){
+			return true;
+		}
+		return false;
+	}
+	 
+	/**
+	 * 限制的消息类型
+	 * @param messageType
+	 * @return
+	 */
+	public static boolean isInMessageType(String messageType) {
+		if(messageType.equals("doctorExtractMessage") || messageType.equals("doctorQuestionMore")
+				|| messageType.equals("doctorNewQuestion")) {
+			return true;
+		}
+		return false;
+	}
+	
+	
+	/**
+	 * 封装信鸽的消息
+	 * @param content
+	 * @return
+	 */
+	public static Message xingeMessage(MessageRequest request,String content) {
+		String messageType = request.getMessageType();
+		String activity = getActivityName(request);
+		String questionId = getQuestionId(request);
+		
+		Message message1 = new Message();
+		message1.setType(Message.TYPE_NOTIFICATION); 
+		Style style = new Style(1);
+		if(isInMessageType(messageType) && !isInTime()) { //消息类型为新提问、新回答、支付，并且不在10点和20点间,就为无声
+			style = new Style(3,0,0,1,0);  //无声
+		} else {
+			style = new Style(3,1,0,1,0);  //响铃
+		}
+		
+		//跳转
+		ClickAction action = new ClickAction();   
+		action.setActionType(ClickAction.TYPE_ACTIVITY);
+		action.setActivity(activity);
+		
+		Map<String, Object> custom = new HashMap<String, Object>(); //直接传值到客户端
+		if(questionId != null) {
+			custom.put("questionId", questionId);
+		}
+		custom.put("flag", 1);
+		
+		message1.setExpireTime(3); //有效期
+		message1.setTitle("微问医生");
+		message1.setContent(content); //内容
+		message1.setStyle(style);
+		message1.setAction(action);
+		message1.setCustom(custom);
+		TimeInterval acceptTime1 = new TimeInterval(0,0,23,59);
+		message1.addAcceptTime(acceptTime1);
+		return message1;
+	}
+	
+	private static String getQuestionId(MessageRequest request) {
+		VelocityContext context = request.getContext();
+		SubprojectType subprojectType = request.getSubprojectType();
+		String questionId = "";
+		if(subprojectType == SubprojectType.DOCTOR) {
+			 DrQuestion drQuestion = (DrQuestion)context.get(TemplateConstants.CONTEXT_QUESTION);
+			 if(drQuestion != null) {
+				 questionId = drQuestion.getId();
+			 }
+		} else {
+			 Question question = (Question)context.get(TemplateConstants.CONTEXT_QUESTION);
+			 if(question != null) {
+				 questionId = question.getId();
+			 }
+		}
+		return questionId;
+	}
+
+	private static String getActivityName(MessageRequest request) {
+		String activity = null;
+		String messageType = request.getMessageType();
+		if(messageType.equals("doctorAuditFail")) {  //失败
+			activity = "com.wenwo.doctor.activity.SystemInitActvity";
+		} else if(messageType.equals("doctorAuditSuccess")) {  //成功
+			activity = "com.wenwo.doctor.activity.SystemInitActvity";
+		} else if(messageType.equals("doctorExtractMessage")) {  //支付
+			activity = "com.wenwo.doctor.activity.WithDrawalActivity";
+		} else if(messageType.equals("doctorNewQuestion")) { //新提问
+			activity = "com.wenwo.doctor.activity.DetailChatActivity";
+		} else if(messageType.equals("doctorQuestionMore")) {  //新追问
+			activity = "com.wenwo.doctor.activity.DetailChatActivity";
+		}
+		
+		return activity;
+	}
+
+	/**
+	 * 推送医生信鸽消息
+	 * @param message
+	 * @param deviceToken
+	 */
+	public static JSONObject sendXingeMessage(Message message,String deviceToken) {
+        int accessId = Integer.parseInt(PropertyUtil.readValue("accessId"));
+        String secretkey = PropertyUtil.readValue("secretkey");
+		
+		XingeApp xinge = new XingeApp(accessId, secretkey);	
+		JSONObject ret = xinge.pushSingleDevice(deviceToken, message);
+		return ret;
+	}
+	
+	/**
+	 * 推送患者信鸽消息
+	 * @param message
+	 * @param deviceToken
+	 */
+	public static JSONObject sendXingeMessage(Message message,String deviceToken,String flag) {
+        int accessId = Integer.parseInt(PropertyUtil.readValue("patientAccessId"));
+        String secretkey = PropertyUtil.readValue("patientSecretkey");
+		
+		XingeApp xinge = new XingeApp(accessId, secretkey);	
+		JSONObject ret = xinge.pushSingleDevice(deviceToken, message);
+		return ret;
+	}
+	 
+	
+	 public static void main(String args[]) {
+		 int accessId = Integer.parseInt(PropertyUtil.readValue("accessId"));
+	     String secretkey = PropertyUtil.readValue("secretkey");
+		 logger.info("读取参数：{}-{}",accessId,secretkey);
+	 }
+
+
+}

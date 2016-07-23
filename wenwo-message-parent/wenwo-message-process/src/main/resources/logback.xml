@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- For assistance related to logback-translator or configuration  -->
+<!-- files in general, please contact the logback user mailing list -->
+<!-- at http://www.qos.ch/mailman/listinfo/logback-user             -->
+<!--                                                                -->
+<!-- For professional support please see                            -->
+<!--    http://www.qos.ch/shop/products/professionalSupport         -->
+<!--                                                                -->
+<configuration>
+  
+  <!-- 控制台输出日志 -->
+  <appender name="stdout" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{20}[%L] - %msg%n</pattern>
+    </encoder>
+  </appender>
+  
+  <!-- 文件输出指定项目日志 -->
+  <appender name="file" class="ch.qos.logback.core.rolling.RollingFileAppender">
+	<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">   
+	       <fileNamePattern>/root/log/message/message_process.%d{yyyy-MM-dd}.log</fileNamePattern>
+	       <maxHistory>30</maxHistory>    
+	</rollingPolicy> 
+
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36}[%L] - %msg%n</pattern>
+    </encoder>
+  </appender>
+  
+    <!-- 不再更新users.matchQuestion.info而是写入该日志 -->
+  <appender name="matchInfo" class="ch.qos.logback.core.rolling.RollingFileAppender">
+	<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">   
+	       <fileNamePattern>/root/log/message/usermatch.%d{yyyy-MM-dd}.log</fileNamePattern>
+	       <maxHistory>30</maxHistory>    
+	</rollingPolicy> 
+
+    <encoder>
+      <pattern>%msg%n</pattern>
+    </encoder>
+  </appender>
+  
+     <!-- 不再更新users.matchQuestion.info而是写入该日志 -->
+  <appender name="weiboRecord" class="ch.qos.logback.core.rolling.RollingFileAppender">
+	<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">   
+	       <fileNamePattern>/root/log/message/weibo.%d{yyyy-MM-dd}.log</fileNamePattern>
+	       <maxHistory>30</maxHistory>    
+	</rollingPolicy> 
+
+    <encoder>
+      <pattern>%msg%n</pattern>
+    </encoder>
+  </appender>
+  
+  <!-- 异步输出指定项目日志 -->  
+  <appender name ="async" class= "ch.qos.logback.classic.AsyncAppender">  
+         <!-- 不丢失日志.默认的,如果队列的80%已满,则会丢弃TRACT、DEBUG、INFO级别的日志 -->  
+         <discardingThreshold >0</discardingThreshold>  
+         <!-- 更改默认的队列的深度,该值会影响性能.默认值为256 -->  
+         <queueSize>512</queueSize>  
+         <!-- 添加附加的appender,最多只能添加一个 -->  
+      <appender-ref ref ="file"/>  
+      <includeCallerData>true</includeCallerData>
+  </appender>
+  
+  <logger name="org.apache" level="INFO">
+  		<appender-ref ref="stdout"/>
+  </logger>
+  
+  <logger name="org.springframework" level="INFO">
+  		<appender-ref ref="stdout"/>
+  </logger>
+  
+  <logger name="com.wenwo" level="INFO">
+  		<appender-ref ref="async"/>
+  </logger>
+  
+  <!-- additivity属性为false，表示此loger的打印信息不再向上级传递 -->
+  
+    <!-- additivity属性为false，表示此loger的打印信息不再向上级传递 -->
+  <logger name="com.wenwo.message.utils.UsersMatchQuestionInfoLogUtil" level="INFO" additivity="false">
+  		<appender-ref ref="matchInfo"/>
+  </logger>
+  
+   <logger name="com.wenwo.message.utils.WeiboSendMsgLogUtil" level="INFO" additivity="false">
+  		<appender-ref ref="weiboRecord"/>
+  </logger>
+</configuration>

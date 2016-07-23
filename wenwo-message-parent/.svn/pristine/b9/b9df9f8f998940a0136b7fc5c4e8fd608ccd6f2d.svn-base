@@ -1,0 +1,113 @@
+/**
+ * 
+ */
+package com.wenwo.message.dao;
+
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
+import com.wenwo.message.enums.MainType;
+import com.wenwo.message.model.MessageError;
+import com.wenwo.message.model.MessageInsite;
+import com.wenwo.message.model.SMSMessageInfo;
+import com.wenwo.weibo4j.model.PrivateMessageInfo;
+
+
+/**
+ * @author shuangtai
+ *
+ */
+public interface IMessageDao {
+
+	/**
+	 * @param messageField
+	 * @param messageFieldValue
+	 */
+	public void saveMessage(String uniqueId, String messageField, Object messageFieldValue) ;
+	
+	public void saveWeiboAtMessage(String uniqueId, String messageField, Object messageFieldValue);
+
+	/**
+	 * @param messageInsite
+	 */
+	public void updateMessageInsite(MessageInsite messageInsite);
+
+	/**
+	 * @param userId
+	 * @param mainType
+	 * @param pageInfo
+	 * @return
+	 */
+	public Page<MessageInsite> getMessagesList(String userId, MainType mainType, Pageable pageInfo);
+
+	/**
+	 * @param uniqueIdList
+	 */
+	public void setMessageRead(List<String> uniqueIdList);
+
+	/**
+	 * @param userId
+	 * @param type == null,获取所有
+	 * @return
+	 */
+	public int getUnreadMessageCount(String userId, MainType type, boolean isMobile);
+	
+	
+	public int getUnreadMessageCount(String userId, MainType type, boolean isMobile,int subProjectType);
+
+	/**
+	 * @param userId
+	 * @return
+	 */
+	public Map<MainType, Integer> getUnreadMessageCountByType(String userId, boolean isMobile);
+
+	/**
+	 * @param userId
+	 * @param messageType
+	 * @param answerIds
+	 * @return
+	 */
+	public int setAnswerMsgRead(String userId, String messageType, List<String> answerIds);
+
+	public Page<MessageInsite> getMobileMessagesList(String userId, MainType messageType, Pageable pageInfo);
+	
+	public Page<MessageInsite> getMobileMessagesList(String userId, MainType messageType, Pageable pageInfo,int type);
+	
+	public void updateObjectStatusByNeedLoad();
+
+	public void saveNewInsiteMessage(MessageInsite messageInsite);
+
+	public boolean isMessageExist(String uniqueId);
+
+	/**
+	 * 保存私信日志
+	 * @param privateMessageInfo
+	 */
+	public void savePriMessage(PrivateMessageInfo privateMessageInfo);
+	
+	/**
+	 * 保存短信
+	 * @param privateMessageInfo
+	 */
+	public void saveSMSMessage(SMSMessageInfo smsMessageInfo);
+	/**
+	 * 根据用户Id和消息Id获取消息
+	 * @param targetUid
+	 * @param messageId
+	 * @return
+	 */
+	public List<MessageInsite> getMessageInsite(String targetUid, String messageId);
+	
+	/**
+	 * 根据用户Id和消息Id获取错误日志消息
+	 * @param targetUid
+	 * @param messageId
+	 * @return
+	 */
+	public List<MessageError> getMessageError(String targetUid, String messageId);
+	
+	
+}

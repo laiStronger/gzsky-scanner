@@ -1,0 +1,1139 @@
+package com.wenwo.message;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import javax.annotation.Resource;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.time.DateUtils;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import com.missian.client.sync.SyncMissianProxyFactory;
+import com.wenwo.message.api.IInternalConfigService;
+import com.wenwo.message.api.IMessageService;
+import com.wenwo.message.entity.MessageParameter;
+import com.wenwo.message.entity.MessageParameter.IdType;
+import com.wenwo.message.entity.OpenUserInfo;
+import com.wenwo.message.enums.MainType;
+import com.wenwo.message.model.MessageInsite;
+import com.wenwo.platform.paging.PageableImpl;
+import com.wenwo.platform.service.IWenwoMessageService;
+import com.wenwo.platform.types.WeiboType;
+import com.wenwo.platform.types.project.SubprojectType;
+import com.wenwo.platform.types.user.AccountType;
+
+
+/**
+ * @author laisq
+ */
+@SuppressWarnings("unused")
+public class MessageServiceTest {
+
+	private static final Logger logger = LoggerFactory.getLogger(MessageServiceTest.class);
+	private static IMessageService messageService;
+	
+	private static IInternalConfigService internalConfigService;
+	
+	private static Pageable pageInfo = null;
+	static{
+		pageInfo = new PageableImpl(1, 10);
+	}
+	
+	/**
+	 * 大账号的登录，需要在此页面登录授权
+	 * 新浪http://weiwen.weibo.com 
+	 * 腾讯 http://qq.wenwo.com 
+	 */
+	
+	
+	/**
+	 * 启动
+	 */
+	@BeforeClass
+	public static void setUp(){
+		SyncMissianProxyFactory factory = new SyncMissianProxyFactory();
+		//本地
+	    internalConfigService = factory.create(IInternalConfigService.class, "tcp://127.0.0.1:18000/internalConfigService");
+	    messageService = factory.create(IMessageService.class, "tcp://127.0.0.1:18000/messageService");
+		
+		//测试机
+		//internalConfigService = factory.create(IInternalConfigService.class, "tcp://192.168.1.50:18000/internalConfigService");
+	    //messageService = factory.create(IMessageService.class, "tcp://192.168.1.50:18000/messageService");
+	    
+		//正式机
+	    //internalConfigService = factory.create(IInternalConfigService.class, "tcp://10.8.2.233:18000/internalConfigService");
+	    //messageService = factory.create(IMessageService.class, "tcp://10.8.2.233:18000/messageService");
+	    
+	}
+	
+	/**
+	 * 匹配用户
+	 * 如果没有出现图片，这是由于问题的答案是匿名的,需要把anon字段改为N
+	 */
+	@Test
+	public void newMatchedUser(){
+		//匹配答案
+		String messageType = "newMatchedUser";
+		//String targetUid = "4fb280d3e4b0c9ae3b6d16af";    //楚林
+		String targetUid = "527515d4e4b0ac17cf3b3244";  //自己新浪的
+		//String targetUid = "4fd6ee650cf25307861858fb";	
+		//String targetUid =   "5284660ce4b007cd897f27d9";  //腾讯
+		
+		String questionId = "uATNQq0p"; //常用
+		//String questionId = "7cr64HbyRX"; //
+		//String questionId = "7vQYgxMOQK1"; 
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, null);
+		parameter.addProperty("backgroud", true);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(msgId);
+	}
+	
+	
+	@Test
+	public void testSendMsg(){
+		String targetUid = "50289ee30cf2389865615c95";
+		String messageType = null;
+		MessageParameter parameter = null;
+		String answerId = "52aa856ce4b0fbbddd500b72";
+		String questionId = "508104a10cf2fe8fb6d6eca8";
+		String messgeId = null;
+		//1>新回答
+		messageType = "newAnswer";
+		
+		Map<String,Object> map = new HashMap<String,Object>();
+//		map.put("oriWeiboId", "348034089078440");
+		parameter = new MessageParameter(answerId, IdType.ANSWER, map);
+		messgeId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(messgeId);
+	}
+	
+	/**
+	 * 新回答
+	 */
+	@Test
+	public void newAnswer(){
+		String messageType = "newAnswer";
+		//String targetUid = "527515d4e4b0ac17cf3b3244"; //测试机
+		//String answerId = "53c78f9be4b0625258589e67";
+		
+		//String targetUid = "4fd5509b0cf253078618551c";   //美清
+		//String answerId = "53ed6e50e4b0e861dda26deb";   //3quf1mdS5
+		
+		//自己测试
+		String targetUid = "527515d4e4b0ac17cf3b3244";
+		//String answerId = "53f18a8be4b03c881854569a";
+		
+		String answerId = "4fcf6368e4b0c645f6683188";  //这个问题是有 双引号的
+		
+		Map<String,Object> map = new HashMap<String,Object>();
+        //map.put("oriWeiboId", "348034089078440");
+		
+		MessageParameter parameter = new MessageParameter(answerId, IdType.ANSWER, map);
+		parameter.addProperty("backgroud", true);
+		String messgeId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(messgeId);
+	}
+	
+	/**
+	 * 回答追问 
+	 */
+	@Test
+	public void answerMore(){
+		//回答者向提问者追问
+		String messageType = "answerMore";
+		String targetUid = "527515d4e4b0ac17cf3b3244";
+		String answerId = "4fbdb8010cf2ebcd4753df91";
+		Map<String, Object> properties = new HashMap<String, Object>();
+		properties.put("askMoreContent", "哈哈");
+		MessageParameter parameter = new MessageParameter(answerId, IdType.ANSWER, properties);
+		String mesId = messageService.sendMessage(messageType, targetUid, SubprojectType.WENWO, parameter);
+		System.out.println(mesId);
+	}
+	
+	/**
+	 * 关注 
+	 */
+	@Test
+	public void follow(){
+		String targetUid = "527515d4e4b0ac17cf3b3244";
+		String messageType = "follow";
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, null);
+		String messgeId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(messgeId);
+	}
+	
+	/**
+	 * 回答屏蔽 
+	 */
+	@Test
+	public void answerHide(){
+		String targetUid = "4ffbd2600cf25e18c12a5638";
+		String messageType = "answerHide";
+		String answerId = "527c84bc3cece96d46dc64d0";
+		Map<String, Object> property = new HashMap<String, Object>();
+		property.put("opRemoveAnswerScore", 1555);
+		MessageParameter parameter = new MessageParameter(answerId, IdType.ANSWER, property);
+		String messgeId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(messgeId);
+	}
+	
+	/**
+	 * 助人指数 
+	 */
+	@Test
+	public void helpIndex(){
+		String targetUid = "4ffbd2600cf25e18c12a5638";
+		String messageType = "helpIndex";
+		Map<String, Object> property = new HashMap<String, Object>();
+		property.put("multiple", 1555);
+		MessageParameter parameter = new MessageParameter(null, null, property);
+		String messgeId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(messgeId);
+	}
+	
+	/**
+	 * 加入帮帮团 
+	 */
+	@Test
+	public void beHelper(){
+		String targetUid = "4ffbd2600cf25e18c12a5638";
+		String messageType = "beHelper";
+		String messgeId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, null);
+		System.out.println(messgeId);
+	}
+	
+	@Test
+	public void gift(){
+		String targetUid = "4ffbd2600cf25e18c12a5638";
+		String messageType = "giftChange";
+		Map<String, Object> property = new HashMap<String, Object>();
+		property.put("gift", "iPhone5s土豪金");
+		MessageParameter param = new MessageParameter(property);
+		String messgeId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, param);
+		System.out.println(messgeId);
+		
+		messageType = "giftCheckFail";
+		messgeId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, param);
+		System.out.println(messgeId);
+		
+		messgeId = messageService.sendMessage("giftShipment", targetUid, SubprojectType.WEIWEN, param);
+		System.out.println(messgeId);
+	}
+	
+	/**
+	 * 回答被运营删除 
+	 */
+	@Test
+	public void answerOpRemoved(){
+		String targetUid = "4ffbd2600cf25e18c12a5638";
+		String messageType = "answerOpRemoved";
+		Map<String, Object> property = new HashMap<String, Object>();
+		property.put("opRemoveAnswerScore", 1666);
+		MessageParameter param = new MessageParameter(property);
+		String messgeId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, param);
+		System.out.println(messgeId);
+	}
+	
+	
+	@Test
+	public void medal(){
+		String curMedalType = "golded";
+		String curMedal = "当前";
+		String upMedalType = "钻石";
+		String upMedal = "升级";
+		
+		Map<String, Object> property = new HashMap<String, Object>();
+		property.put("curMedalType", curMedalType);
+		property.put("curMedal", curMedal);
+		property.put("upMedalType", upMedalType);
+		property.put("upMedal", upMedal);
+		MessageParameter parameter = new MessageParameter(null, null, property);
+		String messageId = messageService.sendMessage("oneMedal", "4ffbd2600cf25e18c12a5638", SubprojectType.WEIWEN, parameter);
+		messageId = messageService.sendMessage("upMedal", "4ffbd2600cf25e18c12a5638", SubprojectType.WEIWEN, parameter);
+	}
+	
+	@Test
+	public void game(){
+		String targetUid = "4ffbd2600cf25e18c12a5638";
+		String messageType = "gameMessage";
+		Map<String, Object> property = new HashMap<String, Object>();
+		property.put("content", "大家都来玩猜个球啊");
+		property.put("redirectCode", "3");
+		MessageParameter param = new MessageParameter(property);
+		String messgeId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, param);
+		System.out.println(messgeId);
+	}
+	
+	@Test
+	public void comment(){
+		String messageType = "goodReview";
+		String targetUid = "5284660ce4b007cd897f27d9";
+		String answerId = "4fbdbed40cf2ebcd4753dfe4";
+		MessageParameter parameter = new MessageParameter(answerId, IdType.ANSWER, null);
+		messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		
+		messageType = "badReview";
+		messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+	}
+	
+	
+	/**
+	 * 新追问
+	 */
+	@Test
+	public void askMore(){
+		//发起追问，接收者为回答者回答问题时所在的项目
+		String messageType = "askMore";
+		//String targetUid = "5080b0b3e4b0eb681a45ef66";
+		String targetUid = "4fb280d3e4b0c9ae3b6d16af";
+		String answerId = "5212ae35e4b06e15f75670e7";
+		
+		Map<String, Object> properties = new HashMap<String, Object>();
+		properties.put("askMoreContent", "哈哈");
+		MessageParameter parameter = new MessageParameter(answerId, IdType.ANSWER, properties);
+		String mesId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(mesId);
+		//messageType = "askMore";
+		//messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+	}
+	
+	/**
+	 * 推广匹配
+	 */
+	@Test
+	public void promotionMatched(){
+		String messageType = "promotionMatched";
+		String targetUid = "527515d4e4b0ac17cf3b3244";  //自己新浪的
+		//String targetUid =   "5284660ce4b007cd897f27d9";  //腾讯
+		
+		String questionId = "7vQYgxMOQK1";
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, null);
+		parameter.addProperty("backgroud", true);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WENWO, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 * 同步答案
+	 */
+	@Test
+	public void testShareMsg(){
+		String shareType = "syncAnswer";
+		String actionUid = "527515d4e4b0ac17cf3b3244";
+		//String actionUid = "5203006be4b07c53a77a36e4";
+		SubprojectType subprojectType = SubprojectType.WENWO;
+		MessageParameter parameter = null;
+		//String answerId = "52aebdf56e36504cd53faa70";
+		String answerId = "53c39844e4b04dbc925d034b";
+		
+		parameter = new MessageParameter(answerId, IdType.ANSWER, null);
+		messageService.share(shareType, actionUid, subprojectType, parameter);
+	}
+	
+	/**
+	 * 同步问题
+	 */
+	@Test
+	public void syncQuest(){
+		String shareType = "syncQuest";
+		//String actionUid = "527515d4e4b0ac17cf3b3244";
+		//String questionId = "eSIjS6VIS";
+        
+		String actionUid = "53c37ff8e4b04dbc925d0178";
+		String questionId = "1RGY33cBu9";
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, null);
+		messageService.share(shareType, actionUid, SubprojectType.WENWO, parameter);  //SubprojectType.WEIWENQQ这个说明需要登录qq的weiwen.weibo.com
+	}
+	
+	/**
+	 * 同步回答
+	 */
+	@Test
+	public void syncAnswer(){
+		String shareType = "syncAnswer";
+		String actionUid = "527515d4e4b0ac17cf3b3244";
+		//String answerId = "4fbc5db60cf2677adc6fbca5";
+		String answerId = "4fbcc14d0cf209b7e21fb87c";
+		
+		Map<String,Object> map = new HashMap<String,Object>();
+		//map.put("oriWeiboId", "3654372560670612");
+		MessageParameter parameter = new MessageParameter(answerId, IdType.ANSWER, map);
+		messageService.share(shareType, actionUid, SubprojectType.DOCTOR, parameter);
+	}
+	
+	@Test
+	public void syncGiftChange(){
+		String shareType = "syncGiftChange";
+		String actionUid = "4ffbd2600cf25e18c12a5638";
+		Map<String, Object> property = new HashMap<String, Object>();
+		property.put("gift", "iphone5s 土豪金");
+		MessageParameter parameter = new MessageParameter(property);
+		messageService.share(shareType, actionUid, SubprojectType.WEIWEN, parameter);
+	}
+	
+	@Test
+	public void testGetAndroidPushMessage(){
+		String targetUid = "4fd5509b0cf253078618551c";
+		SubprojectType subprojectType = SubprojectType.WEIWEN;
+		List<Object> androidMsg = messageService.getAndroidPushMessage(targetUid, subprojectType);
+		System.out.println(androidMsg.toString());
+	}
+	
+	/**
+	 * adviserMsg
+	 */
+	@Test
+	public void adviserMsg(){
+		String messageType = "adviserMsg";
+		String targetUid =   "5284660ce4b007cd897f27d9";  //腾讯
+		String questionId = "zzwEX3Ewy";
+		
+		Map<String,Object> map = new HashMap<String,Object>();
+        map.put("setterNum", 3);
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WENWO, parameter);
+	    System.out.println(msgId);
+	}
+	
+	/**
+	 * 得到未读消息
+	 */
+	@Test
+	public void getUnreadMessageCount(){
+		String userId = "4ffbd2600cf25e18c12a5638";
+		Map<MainType, Integer> countMap = messageService.getUnreadMessageCount("4ffbd2600cf25e18c12a5638");
+		logger.info("按类型数量为:{}", countMap);
+		int countType = messageService.getUnreadMessageCount(userId, MainType.ANSWER);
+		logger.info("类型:{},数量为:{}", MainType.ANSWER, countType);
+	}
+	
+	@Test
+	public void getMessagesList(){
+		try {
+			String userId = "5203006be4b07c53a77a36e4";
+			MainType messageType = MainType.ANSWER;
+			
+			Page<MessageInsite> page = messageService.getMessagesList(userId, messageType, pageInfo);
+			List<MessageInsite> result = page.getContent();
+			logger.info("获取到的消息为:{}", result);
+			for(MessageInsite messageInsite : result) {
+				logger.info("获取到的消息为:{}", messageInsite.isRead());
+				logger.info("id:{},获取到的消息为:{}",messageInsite.getId(), messageInsite.getWebData());
+				
+			}
+		} catch (Exception e) {
+			logger.error("e:{}",e);
+		}
+	}
+	
+	@Test
+	public void getMobileMessagesList(){
+		String userId = "4ffbd2600cf25e18c12a5638";
+		MainType messageType = MainType.ANSWER;
+		
+		Page<MessageInsite> page = messageService.getMobileMessagesList(userId, messageType, pageInfo);
+		List<MessageInsite> result = page.getContent();
+		logger.info("获取到的消息为:{}", result);
+	}
+	
+	@Test
+	public void setAnswerMsgRead(){
+		String userId = "4ffbd2600cf25e18c12a5638";
+		String messageType = "newAnswer";
+		List<String> aidList = new ArrayList<>();
+		aidList.add("5269dfc5e4b01cb97eaf0d58");
+		int affectCount = messageService.setAnswerMsgRead(userId, messageType, aidList);
+		logger.info("影响的数量为:{}", affectCount);
+	}
+	
+	/**
+	 * 解除恶意差评 
+	 */
+	@Test
+	public void badAnswerlift() {
+		String messageType = "badAnswerLift";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //新浪
+		String questionId = "zzwEX3Ewy";
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, null);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+	    System.out.println(msgId);
+	}
+	
+	/**
+	 * 得到问题id
+	 */
+	@Test
+	public void getQuestionIdByWeiboId(){
+		String weiboId = "366721099695541";
+		String questionId = messageService.getQuestionIdByWeiboId(weiboId);
+		logger.info("与微博：{},对应的qid为{}", weiboId, questionId);
+	}
+	
+	/**
+	 * 得到答案id
+	 */
+	@Test
+	public void getAnswerIdByWeiboId(){
+		String weiboId = "3732321641599086";
+		String answerId = messageService.getAnswerIdByWeiboId(weiboId);
+		logger.info("与微博：{},对应的aid为{}", weiboId, answerId);
+	}
+	
+	/**
+	 * 测试atHadanswerFamous消息类型
+	 */
+	@Test
+	public void getAtHadanswerFamous(){
+		String messageType = "atHadAnswerFamous";
+		String targetUid =   "5284660ce4b007cd897f27d9";  //腾讯
+		//String questionId = "zzwEX3Ewy";
+		String questionId = "2nwonWriT";
+		
+		Map<String,Object> map = new HashMap<String,Object>();
+        //map.put("setterNum", 3);
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWENQQ, parameter);
+	    System.out.println(msgId);
+	}
+	
+	/**
+	 * 测试atAskmoreUserWeibo消息类型
+	 */
+	@Test
+	public void atAskmoreUserWeibo(){
+		String messageType = "atAskmoreUserWeibo";
+		//String targetUid =   "5284660ce4b007cd897f27d9";  //腾讯
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("webContent", "这是消息系统的内容啊");
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WENWO, parameter);
+	    System.out.println(msgId);
+	}
+	
+	/**
+	 * 爱心点
+	 */
+	@Test
+	public void lovePoints(){
+		String messageType = "lovePoints";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("lovePoints", "10");
+		map.put("lovePointsOperation", "del");
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+	    System.out.println(msgId);
+	}
+	
+	/**
+	 * 好评数增减
+	 */
+	@Test
+	public void praiseNumber(){
+		String messageType = "praiseNumber";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("praisePoints", "10");  //好评数数量
+		map.put("praiseNumberOperation", "add");   //操作
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(msgId);
+	}
+	
+	//---------------------------医生start-------------------------------------------------
+	
+	/**
+	 *1.提现相关消息 
+	 */
+	@Test
+	public void doctorExtractMessage(){
+		String messageType = "doctorExtractMessage";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		//String targetUid =   "4fdeef47073ae789019b9781";  //
+		//String targetUid =   "4fd5509b0cf253078618551c";  // 艺林
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("backgroud", true);
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 *2.退款相关消息 
+	 */
+	@Test
+	public void doctorRefundMessage(){
+		String messageType = "doctorRefundMessage";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("backgroud", true);
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 * 追问退款相关消息 
+	 */
+	@Test
+	public void doctorAskRefundMessage(){
+		String messageType = "doctorAskRefundMessage";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("backgroud", true);
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 *3.告知医生用户涉及违规等问题停止其收费咨询的功能 
+	 */
+	@Test
+	public void doctorStopService(){
+		String messageType = "doctorStopService";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("backgroud", true);
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 *4.付费提问审核转推荐，与该医生的擅长领域不匹配
+	 */
+	@Test
+	public void doctorAuditRecommend(){
+		String messageType = "doctorAuditRecommend";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		String questionId = "1S8Mblk1XY"; 
+		Map<String,Object> map = new HashMap<String,Object>();
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 *5.付费提问审核不通过，提的问题描述不清晰
+	 */
+	@Test
+	public void doctorAuditQuestion(){
+		String messageType = "doctorAuditQuestion";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		String questionId = "1S8Mblk1XY";
+		Map<String,Object> map = new HashMap<String,Object>();
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 *6.通知提问者有回答
+	 */
+	@Test
+	public void doctorHavingQuestion(){
+		String messageType = "doctorHavingQuestion";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		//String targetUid =   "53c48698e4b06252585831f7";  //
+		String questionId = "1RGmYkDVPU";
+		Map<String,Object> map = new HashMap<String,Object>();
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 *7.通知提问者追问回答
+	 */
+	@Test
+	public void doctorAskMoreAnswer(){
+		String messageType = "doctorAskMoreAnswer";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		//String questionId = "1RGmYkDVPU";
+		String questionId = "1DKqRysNM";  //正式机
+		Map<String,Object> map = new HashMap<String,Object>();
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 *8.邀请橙V用户添加新浪微问医生 
+	 */
+	@Test
+	public void doctorInviteUser(){
+		String messageType = "doctorInviteUser";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("backgroud", true);
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 *9.微问医生审核成功
+	 */
+	@Test
+	public void doctorAuditSuccess(){
+		String messageType = "doctorAuditSuccess";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		//String targetUid =   "4fd16fcfe4b0c645f66832db";  //
+		//String targetUid =   "520f407ee4b03dc8bbaab056";  
+		Map<String,Object> map = new HashMap<String,Object>();
+		//map.put("backgroud", true);
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 *10.微问医生审核失败
+	 */
+	@Test
+	public void doctorAuditFail(){
+		String messageType = "doctorAuditFail";
+		String targetUid = "527515d4e4b0ac17cf3b3244";  //
+		//String targetUid =   "4fd5509b0cf253078618551c";  // 艺林
+		//String targetUid = "4fdeef47073ae789019b9781";  //测试信鸽
+		//String targetUid =   "52b3dd19e4b0e5d4b2f9b8cb";  //丹霞
+		
+		Map<String,Object> map = new HashMap<String,Object>();
+		//map.put("backgroud", true);
+		map.put("doctorFailReason", "失败原因");   //失败原因
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 * 私信
+	 */
+	@Test
+	public void doctorProResponse(){
+		String messageType = "doctorProResponse";
+		String targetUid = "527515d4e4b0ac17cf3b3244";  //
+		
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("priMessageContent", "私信内容");
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 *通知医生有追问(集合1)
+	 */
+	@Test
+	public void doctorQuestionMore(){
+		String messageType = "doctorQuestionMore";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		//String targetUid =   "52bbcc09e4b0cec13f22b2d2";  // 
+		//String targetUid =   "52a14879e4b0488c3aa494b3";  // 艺林
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("backgroud", true);
+		map.put("count", "1");   //数量
+		map.put("drQuestionMoreSuffix", "/q/1RGmJFI7ba.htm");
+		map.put("patientAskMoreContent", "患者追问的内容");
+		String answerId = "535217b3e4b0046865bb12e7"; 
+		MessageParameter parameter = new MessageParameter(answerId, IdType.ANSWER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+
+	/**
+	 * 
+	 * 
+	 *通知医生有新问题(集合2)
+	 */
+	@Test
+	public void doctorNewQuestion(){
+		String messageType = "doctorNewQuestion";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		//String targetUid =   "52bbcc09e4b0cec13f22b2d2";  // 
+		//String targetUid =   "537af8a0e4b0f5721cc80e2c";  // 
+		//String targetUid =   "4fd5509b0cf253078618551c";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		//map.put("backgroud", true);
+		map.put("drQuestionMoreSuffix", "/q/1TeUtI8Uvm.htm");
+		String questionId = "1TeUtI8Uvm"; 
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	
+	/**
+	 *集合消息
+	 */
+	@Test
+	public void doctorBatchQuestion(){
+		String messageType = "doctorBatchQuestion";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("backgroud", true);
+		map.put("batchQuestionString", "2个新问题及3个追问问题");   //字符串
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 * 辅助集合
+	 */
+	@Test
+	public void doctorGeneralMessage(){
+		String messageType = "doctorGeneralMessage";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("backgroud", true);
+		map.put("count", "3");   //数量
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		logger.info("发送doctorGeneralMessage消息，用户uid为{},msgId为{}",targetUid,msgId);
+	}
+	
+	/**
+	 * 医生评论
+	 */
+	@Test
+	public void doctorComment(){
+		/*String messageType = "doctorComment";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("backgroud", true);
+		map.put("doctorCommentWeiboId", "3722033051248939");   //微博id
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		
+		logger.info("发送doctorComment消息，用户uid为{},msgId为{}",targetUid,msgId);*/
+	
+		
+		AccountType accountType = AccountType.valueOf("SINA");
+        OpenUserInfo info = new OpenUserInfo("1864803505","赖stronger",accountType);
+        
+        Map<String,Object> map = new HashMap<String,Object>();
+		map.put("backgroud", true);
+		map.put("doctorCommentWeiboId", "3722033051248939");   //微博id
+        MessageParameter messageParameter = new MessageParameter(map);
+        String result = messageService.sendMessageWithOpenUid("doctorComment", info, SubprojectType.DOCTOR, messageParameter);
+        System.out.println(result);
+		
+	}
+	
+	
+	
+	//---------------------------医生end-----------------------------------------------------
+	
+	
+	
+	/**
+	 * dailyPush
+	 * 日报
+	 */
+	@Test
+	public void dailyPush(){
+		String messageType = "dailyPush";
+		//String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		//String targetUid =   "4fb2843de4b0c9ae3b6d16b1";  // 华老
+		//String targetUid =   "500ccd5fe4b02a2ce37ac182";  //金秀
+		String targetUid =   "51417acee4b0024e2798f175";  //艺林
+		//String targetUid =   "509b893de4b00716c665f032";   //杨蓓
+		//String targetUid =   "50dbbbd9e4b0a532fe6afcff";   //赵娇
+		
+		Map<String,Object> map = new HashMap<String,Object>(); 
+		map.put("content", "测试啊"+(new Random().nextLong()));   
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 * 测试push
+	 */
+	@Test
+	public void testA(){
+		String messageType = "test";
+		//String targetUid =   "51417acee4b0024e2798f175";  //艺林
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  
+		
+		Map<String,Object> map = new HashMap<String,Object>(); 
+		map.put("content", "测试啊"+(new Random().nextLong()));   
+		String questionId = "7vQYgxMOQK1"; 
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, map);
+		parameter.addProperty("backgroud", true);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 * 测试
+	 */
+	@Test
+	public void Testa(){
+		String messageType = "testa";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  
+		//String targetUid =   "5284660ce4b007cd897f27d9";  
+		
+		Map<String,Object> map = new HashMap<String,Object>(); 
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		parameter.addProperty("backgroud", true);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 * 测试
+	 */
+	@Test
+	public void thisTest2(){
+		String messageType = "thisTest2";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  
+		
+		Map<String,Object> map = new HashMap<String,Object>(); 
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		parameter.addProperty("backgroud", true);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WENWO, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 * 测试doctorTest
+	 */
+	@Test
+	public void doctorTest(){
+		String messageType = "doctorTest";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  
+		
+		Map<String,Object> map = new HashMap<String,Object>(); 
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		parameter.addProperty("backgroud", true);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	@Test
+	public void processBuilderTest(){
+		ProcessBuilder process = new ProcessBuilder("gm","convert", "/www/backimg/WEIWEN_newAnswer.jpg","-draw"
+				,"text 8,8 \"helloworld\"","/Users/shuangtai/Documents/tmp/test_builder.jpg");
+		
+//		ProcessBuilder process = new ProcessBuilder("gm");
+		try {
+			Map<String,String> env = process.environment();
+//			String path = env.get("PATH");
+//			env.put("PATH", path + ":/opt/local/bin");
+			logger.info(env.get("PATH"));
+			Process pr = process.redirectOutput(new File("/Users/shuangtai/Documents/tmp/mys.sh")).start();
+			logger.info(IOUtils.toString(pr.getErrorStream()));
+			logger.info(IOUtils.toString(pr.getInputStream()));
+		} catch (Exception e) {
+			logger.error("dfas",e);
+		}
+	}
+	
+	@Test
+	public void reloadConfig(){
+		try {
+			internalConfigService.reloadConfiguration();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	@Test
+	public void testRegex(){
+		String test = "测试内容{回答内容(20)}{回答内2容(20)}";
+		
+		String regex = "\\{.*\\((\\d+)\\)\\}";
+		Pattern pattern = Pattern.compile(regex);
+		Matcher matcher = pattern.matcher(test);
+		while(matcher.find()){
+				System.out.println(matcher.group(1));
+		}
+		
+	}
+	
+	
+	@Test
+	public void atMessage(){
+        AccountType accountType = AccountType.valueOf("SINA");
+        List<OpenUserInfo> openUserInfos = new ArrayList<OpenUserInfo>();
+        OpenUserInfo info = new OpenUserInfo("1864803505","赖stronger",accountType);
+        openUserInfos.add(info);
+        MessageParameter messageParameter = new MessageParameter(null);
+        String result = messageService.sendMessageWithOpenUid("atHadAnswerNotLogin", openUserInfos, SubprojectType.WENWO, messageParameter);
+        System.out.println(result);
+	}
+	
+	/**
+	 * 根据weiboId读取questionId
+	 */
+	@Test
+	public void testGetQuestionIdByWeiboId(){
+		String questionId = messageService.getQuestionIdByWeiboId("3731181424079920");
+		System.out.println(questionId);
+	}
+	
+	/**
+	 * 根据weiboId读取answerId
+	 */
+	@Test
+	public void testGetAnswerIdByWeiboId(){
+		String answer = messageService.getAnswerIdByWeiboId("3730833821137750");
+		System.out.println(answer);
+	}
+	
+	/**sinaask
+	 * 匹配用户
+	 * 如果没有出现图片，这是由于问题的答案是匿名的,需要把anon字段改为N
+	 */
+	@Test
+	public void newMatchedUserSinaask(){
+		//匹配答案
+		String messageType = "newMatchedUser";
+		//String targetUid = "4fb280d3e4b0c9ae3b6d16af";    //楚林
+		String targetUid = "527515d4e4b0ac17cf3b3244";  //自己新浪的
+		//String targetUid =   "5284660ce4b007cd897f27d9";  //腾讯
+		
+		//String questionId = "KHcNlOpXQh"; //常用
+		String questionId = "7vQYgxMOQK1"; 
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, null);
+		parameter.addProperty("backgroud", true);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.SINAASK, parameter);
+		System.out.println(msgId);
+	}
+	
+	/**
+	 * 微问医生，手机消息接口
+	 */
+	@Test
+	public void getMobileMessagesList1(){
+		String userId = "527515d4e4b0ac17cf3b3244";
+		MainType messageType = null;
+		int type = 0;
+		
+		Page<MessageInsite> page = messageService.getMobileMessagesList(userId, messageType, pageInfo,type);
+		List<MessageInsite> result = page.getContent();
+		logger.info("获取到的消息为:{}", result);
+		
+	}
+	
+	/**
+	 * 微问医生，手机未读消息
+	 */
+	@Test
+	public void getMobileUnreadMessageCount(){
+		String userId = "527515d4e4b0ac17cf3b3244";
+		MainType messageType = null;
+		int subProjectType = 0;
+		
+		int count = messageService.getMobileUnreadMessageCount(userId,null,subProjectType);
+		logger.info("获取未读消息数量:{}", count);
+		
+	}
+	
+	
+	/**
+	 * 后台特殊逻辑的消息类型
+	 */
+	@Test
+	public void specialBGMessage(){
+		String messageType = "specialBGMessage";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		//map.put("specialBGString", "你好,测试");
+		//map.put("specialBGURL", "http://www.baidu.com/img/bdlogo.gif");
+		
+		map.put("specialBGString", "@赖stronger 今天吃饭了嘛-3536778165?");
+		map.put("specialBGURL", "");
+		//map.put("specialBGURL", null);
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WENWO, parameter);
+		System.out.println(msgId);
+	}
+	/**
+	 * 后台特殊逻辑的消息类型
+	 */
+	@Test
+	public void specialBGMessage1(){
+		String messageType = "specialBGMessage";
+		//String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("specialBGString", "你好,测试");
+		map.put("specialBGURL", "http://www.baidu.com/img/bdlogo.gif");
+		MessageParameter parameter = new MessageParameter("1864803505", IdType.USER, map);
+		
+		OpenUserInfo targetOpenUser = new OpenUserInfo("1864803505","赖stronger",AccountType.SINA);
+		targetOpenUser.setOpenUid("1864803505");
+		//String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		String msgId = messageService.sendMessageWithOpenUid(messageType,
+				targetOpenUser, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	@Test
+	public void specialBGMessage2(){
+		String weibo = "示例:11@赖stronger 今天吃饭了嘛?";
+		
+		
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("specialBGString", weibo);
+		map.put("specialBGURL", "");
+		MessageParameter parameter = new MessageParameter("527515d4e4b0ac17cf3b3244", IdType.USER, map);
+		String msgId = messageService.sendMessage("specialBGMessage", "527515d4e4b0ac17cf3b3244",  SubprojectType.DOCTOR, parameter);
+		                                           
+	}
+	
+	/**
+	 * 删除doctor集合消息的hash集合，根据用户id，和目标id（questionid或者answerid）
+	 */
+	@Test
+	public void delHashBatchMessage(){
+		List<String> targetUidList = new ArrayList<String>();
+		targetUidList.add("527515d4e4b0ac17cf3b3244");
+		targetUidList.add("530aaa6be4b0025a3e3d6361");
+		String targetId = "535217b3e4b0046865bb12e7";
+		//String targetId = "1UtAyOuPww";
+		//String targetId = "doctorQuestionMore";
+		messageService.delHashBatchMessage(targetUidList,targetId);
+		
+	}
+	
+	/**
+	 * 保存SpecialWeiboLog到20数据库
+	 */
+	@Test
+	public void saveSpecialWeiboLog(){
+		messageService.saveSpecialWeiboLog("123456", WeiboType.SINA, SubprojectType.DOCTOR, 1);
+	}
+	
+	/**
+	 * ceshi
+	 */
+	@Test
+	public void doctorToTest(){
+		String messageType = "doctorToTest";
+		String targetUid = "527515d4e4b0ac17cf3b3244";  //
+		
+		Map<String,Object> map = new HashMap<String,Object>();
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	
+	
+}

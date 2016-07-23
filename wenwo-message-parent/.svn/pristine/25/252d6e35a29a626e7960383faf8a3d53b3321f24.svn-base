@@ -1,0 +1,134 @@
+package com.wenwo.message.utils;
+
+import java.util.Date;
+import java.util.List;
+import org.apache.commons.lang.StringUtils;
+import org.apache.velocity.VelocityContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import com.wenwo.message.channel.WeiboChannel;
+import com.wenwo.message.constants.TemplateConstants;
+import com.wenwo.message.model.SpecialWeiboLog;
+import com.wenwo.message.model.SpecialWeiboRecord;
+import com.wenwo.message.model.WeiboAnswerInfo;
+import com.wenwo.message.model.WeiboQuestionInfo;
+import com.wenwo.message.request.MessageRequest;
+import com.wenwo.platform.dao.util.IMongoUtil;
+import com.wenwo.platform.types.project.SubprojectType;
+import com.wenwo.platform.types.user.AccountType;
+import com.wenwo.weibo4j.model.PostResult;
+import com.wenwo.weiboproxy.service.WeiboBigNodeFacade;
+
+
+/**
+ * mongo操作类
+ * @author StanleyDing
+ *
+ */
+public class PlatformMongoUtil {
+	private static Logger logger = LoggerFactory.getLogger(PlatformMongoUtil.class);
+	
+	private IMongoUtil mongoUtil;
+	
+	public void setMongoUtil(IMongoUtil mongoUtil) {
+		this.mongoUtil = mongoUtil;
+	}
+	
+	
+	/**
+	 * 微博id存储到mongo中
+	 * @param weiboId
+	 * @param id
+	 */
+	public void pushWeiboIdForMatch(String weiboId,VelocityContext context,String messageType) {
+		if(!messageType.equals("newAnswer") && !messageType.equals("answerMore") 
+				&& !messageType.equals("askMore") && !messageType.equals("newMatchedUser")) {
+			return;
+		}
+		
+		try {
+			String answerId = ContextUtils.getAnswerId(context);
+			String questionId = ContextUtils.getQuestionId(context);
+			//newAnswer,answerMore askMore,newMatchedUser
+			if(messageType.equals("newMatchedUser")) {
+				//问题
+				WeiboQuestionInfo qInfo = new WeiboQuestionInfo(weiboId,questionId,messageType,new Date());
+				mongoUtil.save(qInfo);
+				logger.info("存储微博id到mongo成功：微博id{},问题id{},消息类型{}",weiboId,questionId,messageType);
+			} else {
+				//答案
+				WeiboAnswerInfo aInfo = new WeiboAnswerInfo(weiboId,answerId,messageType,new Date());
+				mongoUtil.save(aInfo);
+				logger.info("存储微博id到mongo成功：微博id{},答案id{},消息类型{}",weiboId,answerId,messageType);
+			}
+				
+		} catch (Exception e) {
+			logger.error("存储微博id到redis失败："+weiboId, e);
+		} 
+	}
+	
+	
+	/**
+	 * 后台特殊逻辑
+	 */
+	public void dealSpecialWeibo(WeiboBigNodeFacade weiboBigNodeFacade,WeiboChannel channel,MessageRequest request,String msgContent) {
+		logger.info("处理specialBGMessage消息类型");
+		VelocityContext context = request.getContext();
+		String bgurl = context.get(TemplateConstants.CONTEXT_GB_URL).toString();
+		String bgString = context.get(TemplateConstants.CONTEXT_GB_STRING).toString();
+		String weiboUid = context.get(TemplateConstants.CONTEXT_OPEN_UID).toString();
+		AccountType accountType = request.getAccountType();
+		SubprojectType projectType = request.getSubprojectType();
+		
+		if(bgurl.equals("")) {
+			bgurl = null;
+		}
+				
+		//发送微博
+		String weiboId = null;
+		try {
+			PostResult result = weiboBigNodeFacade.post(msgContent, bgurl, null, channel.getAccGroup(),
+					accountType.getWeiboType(), SubprojectType.DOCTOR);
+			weiboId = result.getWeiboId();
+		} catch (Exception e) {
+			logger.error("specialBGMessage消息类型发送微博失败", e);
+		}
+		
+		Date currentDate = new Date();
+		boolean isSuccess = StringUtils.isEmpty(weiboId) ? false : true;
+		WeiboSendMsgLogUtil.logWeiboPostRecord(request.getMessageType(), currentDate, 
+				request.getSubprojectType(), request.getAccountType(), true, context, isSuccess);
+		
+		//进行逻辑判断
+		MongoTemplate springMongoTemplate = null;
+		List<SpecialWeiboLog> list = null;
+		try {
+			springMongoTemplate = WenwoMongoConnection.init();
+			Criteria criteria = Criteria.where(SpecialWeiboLog.WEIBO_Uid).is(weiboUid)
+	                .and(SpecialWeiboLog.SUBPROJECT_TYPE).is(projectType) 
+	                .and(SpecialWeiboLog.WEIBO_TYPE).is(accountType.getWeiboType());
+			Query query = Query.query(criteria);
+			list = springMongoTemplate.find(query, SpecialWeiboLog.class);
+			
+		} catch (Exception e) {
+			e.printStackTrace();
+			logger.info(e.getMessage());
+		}
+		
+		logger.info("后台特殊消息类型参数，微博ID:{},weiboUid:{},projectType:{},accountType:{},记录数量:{}",weiboId,weiboUid,projectType, accountType,list.size());
+		if(list != null && list.size() > 0) {
+			SpecialWeiboRecord specialWeiboRecord = new SpecialWeiboRecord(weiboId, weiboUid, accountType.getWeiboType(),projectType,currentDate,1,bgString);
+			springMongoTemplate.save(specialWeiboRecord);
+        }
+		
+		
+	}
+	
+	
+	
+	
+
+}

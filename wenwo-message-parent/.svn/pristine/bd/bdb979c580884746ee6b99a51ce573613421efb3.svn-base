@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+	 xmlns:util="http://www.springframework.org/schema/util"
+	 xsi:schemaLocation="http://www.springframework.org/schema/context
+          http://www.springframework.org/schema/context/spring-context-3.1.xsd
+          http://www.springframework.org/schema/util
+          http://www.springframework.org/schema/util/spring-util-3.1.xsd
+          http://www.springframework.org/schema/beans
+          http://www.springframework.org/schema/beans/spring-beans-3.1.xsd" default-autowire="byName">
+	
+	<!-- 所有的filter 命名规则（项目_消息类型_endpoint_filter）-->
+	
+	<!-- 1.同步答案，同步问题的filter -->
+    <bean id="sinaqq_syncQuest_share_filter" class="com.wenwo.message.endpoint.filter.SINAQQsyncQuestShareFilterImpl">
+			<property name="projectScope" value="WEIWEN,WEIWENQQ,SINAASK,WENWO" />
+			<property name="messageTypeScope" value="syncQuest" />
+			<property name="endpointScope" value="ShareEndpoint" />
+	</bean>
+	
+	<!-- 2.同步答案，同步问题的filter -->
+    <bean id="sinaqq_syncAnswer_share_filter" class="com.wenwo.message.endpoint.filter.SINAQQsyncAnswerShareFilterImpl">
+			<property name="projectScope" value="WEIWEN,WEIWENQQ,SINAASK,WENWO" />
+			<property name="messageTypeScope" value="syncAnswer" />
+			<property name="endpointScope" value="ShareEndpoint" />
+	</bean>
+	
+	<!-- 3.微博的filter -->
+	<bean id="sinaqq_all_weibo_filter" class="com.wenwo.message.endpoint.filter.SINAQQAllWeiboFilterImpl">
+			<property name="projectScope" value="WEIWEN,WEIWENQQ,SINAASK,WENWO" />
+			<property name="messageTypeScope" value="all" />
+			<property name="endpointScope" value="WeiboAtEndpoint" />
+	</bean>
+	
+	<!-- 4.sinaask的filter -->
+	<bean id="sinaask_filter" class="com.wenwo.message.endpoint.filter.SINAASKFilterImpl">
+			<property name="projectScope" value="SINAASK" />
+			<property name="messageTypeScope" value="all" />
+			<property name="endpointScope" value="all" />
+	</bean>
+	
+	<!-- 5.sinaask的filter针对shareEndpoint -->
+	<bean id="sinaask_all_share_filter" class="com.wenwo.message.endpoint.filter.SINAASKAllShareFilterImpl">
+			<property name="projectScope" value="SINAASK" />
+			<property name="messageTypeScope" value="all" />
+			<property name="endpointScope" value="ShareEndpoint" />
+	</bean>
+	
+	<!-- 6.微问医生 集合消息的filter -->
+	<bean id="doctor_question_weibo_filter" class="com.wenwo.message.endpoint.filter.DoctorQuestionWeiboFilterImpl">
+			<property name="projectScope" value="DOCTOR" />
+			<property name="messageTypeScope" value="doctorNewQuestion,doctorQuestionMore" /> <!-- 医生新提问，医生追问 -->
+			<property name="endpointScope" value="WeiboAtEndpoint,PriMessageEndpoint" />
+	</bean>
+	
+	
+	<bean id="filterSelector" class="com.wenwo.message.endpoint.filter.FilterSelector">
+	    <property name="allFilterList">
+     		<list>
+               <ref bean="sinaqq_syncQuest_share_filter" />  
+               <ref bean="sinaqq_syncAnswer_share_filter" />  
+               <ref bean="sinaqq_all_weibo_filter" />  
+               <ref bean="sinaask_filter" />  
+               <ref bean="sinaask_all_share_filter" />  
+               <ref bean="doctor_question_weibo_filter" />  
+               
+     		</list>
+	    </property> 
+	</bean>
+</beans>

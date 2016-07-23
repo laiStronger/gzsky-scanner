@@ -1,0 +1,140 @@
+package com.wenwo.message.endpoint.filter;
+
+import java.util.Date;
+
+import java.util.Map;
+
+
+
+import javax.annotation.Resource;
+
+import org.apache.velocity.VelocityContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import redis.clients.jedis.ShardedJedis;
+import redis.clients.jedis.ShardedJedisPool;
+
+import com.wenwo.message.constants.MessageConstants;
+import com.wenwo.message.constants.TemplateConstants;
+import com.wenwo.message.request.MessageRequest;
+import com.wenwo.platform.doctor.service.IDrQuestionService;
+import com.wenwo.platform.entity.doctor.DrAnswer;
+import com.wenwo.platform.entity.doctor.DrQuestion;
+import com.wenwo.platform.entity.doctor.DrQuestion.QuestionType;
+
+public class DoctorSMSFilterImpl extends AbstractEndpointFilter{
+	private static final Logger logger = LoggerFactory.getLogger(DoctorQuestionWeiboFilterImpl.class);	
+	@Autowired
+	private ShardedJedisPool shardedJedisPool;	
+	@Resource
+	private IDrQuestionService drQuestionService; 
+	@Override
+	public boolean preHandler(MessageRequest request, Map<String, Object> preMap)
+			throws Exception {
+		VelocityContext context = request.getContext();
+		String messageType = request.getMessageType();
+		String targetId = request.getTargetUser().getId();
+		String drQuestionId="";
+		if(messageType!=null&& messageType.equals("doctorNewQuestion")){
+			DrQuestion drQuestion = (DrQuestion)context.get(TemplateConstants.CONTEXT_QUESTION);
+			drQuestionId=drQuestion.getId();
+			if (!(drQuestion != null
+					&& (drQuestion.getDreward()>0)
+					&& (drQuestion.getKindType().equals(QuestionType.P2P)))) {
+				//当消息类型不是点对点且付费问题时，且是点对点和收费问题时（包括优惠券），不发送短信
+					return false;	
+			}
+		}else if(messageType!=null&& messageType.equals("doctorQuestionMore")){
+			DrAnswer drAnswer = (DrAnswer) context
+					.get(TemplateConstants.CONTEXT_ANSWER);
+			DrQuestion drQuestion1 = drQuestionService.findById(drAnswer
+					.getQuestionId());
+			drQuestionId = drAnswer.getId();
+			if (!(drAnswer != null && (drQuestion1.getDreward() > 0)
+					&& (drQuestion1.getKindType().equals(QuestionType.P2P)))) {
+				//当消息类型不是点对点且付费问题时，不发送短信
+				//targetId = drAnswer.getId();
+				return false;
+                 
+			}
+		}
+		if(isInTime()) {
+			return true;
+		}else{
+			//不是在预定时间时，则保存起来隔日再发
+            
+			saveIdToSortedSet(targetId);
+			saveMessageToHash(targetId, messageType,drQuestionId);
+			
+			return false;
+		}	
+	}
+	@SuppressWarnings("deprecation")
+	private boolean isInTime() {
+		//开始时间
+		Date startTime = new Date();
+		startTime.setHours(9);
+		startTime.setMinutes(40);
+		startTime.setSeconds(0);
+		Long start = startTime.getTime();
+		
+		//结束时间
+		Date endTime = new Date();
+		endTime.setHours(15);
+		endTime.setMinutes(0);
+		endTime.setSeconds(0);
+		Long end = endTime.getTime();
+		
+		Long now = new Date().getTime();
+		if(now >start && now < end){
+			return false;
+		}
+		return true;
+	}
+	
+		
+	/**
+	 * 保存在sortedSet
+	 * @param targetId
+	 */
+	private void saveIdToSortedSet(String targetId){
+		ShardedJedis jedis = shardedJedisPool.getResource();
+		try{
+			if(jedis.zrank(MessageConstants.MESSAGE_USER_SET_KEY,targetId)==null){
+				jedis.zadd(MessageConstants.MESSAGE_USER_SET_KEY,System.currentTimeMillis(),targetId);
+			}
+			logger.info("添加有序结合成功："+targetId);
+		}finally{
+			shardedJedisPool.returnResource(jedis);
+		}
+	}
+	
+	/**
+	 * 保存在hash
+	 * @param targetId
+	 * @param MessageType
+	 * @param drQuestionId
+	 */
+	private void saveMessageToHash(String targetId,String MessageType,String drQuestionId){
+		ShardedJedis jedis = shardedJedisPool.getResource();
+		try{
+			Long timeTemp=System.currentTimeMillis();
+			jedis.hset(MessageConstants.MESSAGE_USER_CONTENT_KEY
+					+targetId ,drQuestionId+"_"+timeTemp,MessageType);
+			logger.info("添加消息到hash值成功："+MessageType);
+		}finally{
+			shardedJedisPool.returnResource(jedis);
+		}
+	}
+	
+	
+	@Override
+	public void postHandler(MessageRequest request,
+			Map<String, Object> reponseMap) throws Exception {
+		// TODO Auto-generated method stub
+		
+	}
+
+}

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+	 xmlns:util="http://www.springframework.org/schema/util"
+	 xsi:schemaLocation="http://www.springframework.org/schema/context
+          http://www.springframework.org/schema/context/spring-context-3.1.xsd
+          http://www.springframework.org/schema/util
+          http://www.springframework.org/schema/util/spring-util-3.1.xsd
+          http://www.springframework.org/schema/beans
+          http://www.springframework.org/schema/beans/spring-beans-3.1.xsd" default-autowire="byName">
+	
+	<!-- 60数据库 -->
+	<bean id="mongoUtil" class="com.wenwo.platform.dao.util.MongoUtilImpl">
+		<property name="mongoTemplate" ref="mongoTemplate" />
+	</bean>
+	<bean id="BaseDao" class="com.wenwo.message.dao.impl.BaseDao" abstract="true">
+		<property name="mongoUtil" ref="mongoUtil" />
+	</bean>
+	
+	
+	<bean id="messageTypeDao" class="com.wenwo.message.dao.impl.MessageTypeDao" parent="BaseDao"/>
+	<bean id="variableDao" class="com.wenwo.message.dao.impl.VariableDao" parent="BaseDao">
+		<property name="mongoTemplate" ref="mongoTemplate" />
+	</bean>
+	<bean id="channelDao" class="com.wenwo.message.dao.impl.ChannelDao" parent="BaseDao"/>
+	<bean id="templateDao" class="com.wenwo.message.dao.impl.TemplateDao" parent="BaseDao"/>
+	<bean id="shareDao" class="com.wenwo.message.dao.impl.ShareDao" parent="BaseDao"/>
+	<bean id="messageDao" class="com.wenwo.message.dao.impl.MessageDao" parent="BaseDao"/>
+	<bean id="weiboAtMessageDao" class="com.wenwo.message.dao.impl.WeiboAtMessageDao" parent="BaseDao">
+		<property name="mongoTemplate" ref="mongoTemplate" />
+	</bean>
+	<bean id="messageErrorDao" class="com.wenwo.message.dao.impl.MessageErrorDao" parent="BaseDao"/>
+	
+	
+	
+</beans>

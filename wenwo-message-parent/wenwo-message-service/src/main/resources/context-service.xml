@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/context classpath:/org/springframework/context/config/spring-context-3.1.xsd
+			http://www.springframework.org/schema/beans classpath:/org/springframework/beans/factory/xml/spring-beans-3.1.xsd
+			http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.2.xsd
+			http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-3.1.xsd" default-autowire="byName">
+	
+	<bean id="propertyConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+		<property name="locations">
+			<list>
+				<value>classpath:/wenwo-mongo.properties</value>
+				<value>classpath:/wenwo-rpc.properties</value>
+				<value>classpath:/wenwo-message-redis.properties</value>
+			</list>
+		</property>
+	</bean>
+	
+	<bean id="gson" class="com.google.gson.Gson"></bean>
+	
+	 <context:component-scan base-package="com.wenwo.message"/>
+	 
+	 <!-- 发布配置变化的消息 -->
+	<bean id="configChangePub" class="com.wenwo.message.redis.ConfigChangePub">
+		<property name="shardedJedisPool" ref="shardedJedisPool"></property>
+	</bean>
+	
+	<!-- 对外提供服务接口 -->
+	<bean id="messageService" class="com.wenwo.message.service.MessageServiceImpl" autowire="byName"/>
+	
+	<!-- 消息系统本身使用接口 -->
+	<bean id="messageTypeService" class="com.wenwo.message.service.MessageTypeServiceImpl" autowire="byName"/>
+	<bean id="variableService" class="com.wenwo.message.service.VariableServiceImpl" autowire="byName"/>
+	<bean id="shareService" class="com.wenwo.message.service.ShareServiceImpl" autowire="byName"/>
+	<bean id="channelService" class="com.wenwo.message.service.ChannelServiceImpl" autowire="byName"/>
+	
+	<bean id="internalTemplateService" class="com.wenwo.message.service.InternalTemplateServiceImpl" autowire="byName"/>
+	<bean id="internalConfigService" class="com.wenwo.message.service.InternalConfigServiceImpl" autowire="byName"/>
+	<bean id="configLoader" class="com.wenwo.message.config.ConfigLoader" autowire="byName"/>
+	
+	<bean id="taskExecutor" class="org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor">
+		<property name="corePoolSize" value="15" />
+		<property name="keepAliveSeconds" value="200" />
+		<property name="maxPoolSize" value="100" />
+	</bean>
+	
+	<bean id="androidPushMessageHelper" class="com.wenwo.message.helper.AndroidPushMessageHelper">
+		<property name="messageExpireTime" value="86400000" />
+	</bean>
+</beans>

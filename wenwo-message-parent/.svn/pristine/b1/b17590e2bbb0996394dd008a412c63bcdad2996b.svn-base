@@ -1,0 +1,104 @@
+package com.wenwo.message.endpoint.impl;
+
+import java.util.List;
+import java.util.Map;
+import org.apache.commons.lang.StringUtils;
+import org.apache.velocity.VelocityContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.wenwo.message.constants.TemplateConstants;
+import com.wenwo.message.dao.IMessageDao;
+import com.wenwo.message.endpoint.AbstractMessageEndpoint;
+import com.wenwo.message.endpoint.filter.IEndpointFilter;
+import com.wenwo.message.im4java.JMagickImageBuilder;
+import com.wenwo.message.request.MessageRequest;
+import com.wenwo.message.template.gen.ContentGenerator;
+import com.wenwo.message.utils.RedisUtil;
+import com.wenwo.platform.entity.WenwoUser;
+import com.wenwo.platform.types.WeiboType;
+import com.wenwo.platform.types.project.SubprojectType;
+import com.wenwo.platform.types.user.AccountType;
+import com.wenwo.weibo4j.AccGroup;
+import com.wenwo.weibo4j.model.PrivateMessageInfo;
+import com.wenwo.weiboproxy.service.WeiboBigNodeFacade;
+
+/**
+ * 私信配置
+ * @author laisq
+ *
+ */
+public class PriMessageEndpoint extends AbstractMessageEndpoint {
+
+	private final Logger logger = LoggerFactory.getLogger(getClass());
+	private final String textTemplateId;
+	private final String imageTemplateId;
+	private final ContentGenerator contentGenerator;
+	private final WeiboBigNodeFacade weiboBigNodeFacade;
+	private final JMagickImageBuilder jMagickImageBuilder;
+	private final RedisUtil redisUtil;
+	private final IMessageDao messageDao;
+	
+
+	public PriMessageEndpoint(String textTemplateId, String imageTemplateId, ContentGenerator contentGenerator,
+			WeiboBigNodeFacade weiboBigNodeFacade,JMagickImageBuilder jMagickImageBuilder, 
+			IMessageDao messageDao,RedisUtil redisUtil,List<IEndpointFilter> pointFilterList) {
+		super(pointFilterList);
+		this.textTemplateId = textTemplateId;
+		this.imageTemplateId = imageTemplateId;
+		this.contentGenerator = contentGenerator;
+		this.weiboBigNodeFacade = weiboBigNodeFacade;
+		this.jMagickImageBuilder = jMagickImageBuilder;
+		this.redisUtil = redisUtil;
+		this.messageDao = messageDao;
+	}
+
+	@Override
+	protected void doSending(MessageRequest request,Map<String,Object> reponseMap) throws Exception {
+		VelocityContext context = request.getContext();
+		AccountType accountType = request.getAccountType();
+		SubprojectType projectType = request.getSubprojectType();  //项目类型：如doctor
+		String messageType = request.getMessageType(); //消息类型
+		logger.info("进入发私信接口,项目类型{},消息类型{}",projectType,messageType);
+       
+        String msgContent = contentGenerator.generateText(textTemplateId, context);
+   		if(StringUtils.isEmpty(msgContent)){
+   			logger.error("内容为空，不发送");
+   			return;
+   		}
+   		
+   		//发送私信(使用PRIMESSAGE，sina,DOCTOR账号发送)
+   		WenwoUser targetUser = (WenwoUser)context.get(TemplateConstants.CONTEXT_TARGET_USER);
+   		Long receiver_id = Long.parseLong(targetUser.getOpenUid());  
+		String type = "text";     
+		String annotations = "";
+		AccGroup group = AccGroup.PRIMESSAGE;   //分组
+		WeiboType weiboType = accountType.getWeiboType();  //sina
+		PrivateMessageInfo info = postPriMessage(messageType,null,receiver_id,type, msgContent, annotations, group,weiboType,projectType);
+   		if(info != null) {
+   			info.setId(request.getUniqueId());
+   		}
+		logger.info("私信日志：{}",info);
+		messageDao.savePriMessage(info);
+	}
+
+	/**
+	 * 发私信
+	 * @param accountType
+	 * @param msgContent
+	 * @param channel
+	 * @param messageType
+	 * @return
+	 */
+	private PrivateMessageInfo postPriMessage(String messageType,String source,Long receiver_id,String type, String data, 
+			String annotations, AccGroup group,WeiboType weiboType, SubprojectType projectType) {
+		PrivateMessageInfo info = null;
+		try {
+			info = weiboBigNodeFacade.privateMessage(source, receiver_id, type, data, annotations, group, weiboType, projectType);
+		} catch (Exception e) {
+			logger.error("postPriMessage：消息类型{},post weibo without pic failed",messageType,e);
+		}
+		return info;
+	}
+
+	
+}

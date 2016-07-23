@@ -1,0 +1,6 @@
+# Character entity references for markup-significant and internationalization characters
+
+34 = quot
+38 = amp
+60 = lt
+62 = gt

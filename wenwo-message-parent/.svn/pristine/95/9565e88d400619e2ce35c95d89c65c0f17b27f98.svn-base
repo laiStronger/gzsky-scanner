@@ -1,0 +1,68 @@
+/**
+ * @author acer
+ * @date 2015-2-6
+ */
+package com.wenwo.message.builder;
+
+import java.util.Calendar;
+
+import javax.annotation.Resource;
+
+import org.apache.velocity.VelocityContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.wenwo.message.constants.TemplateConstants;
+import com.wenwo.message.entity.MessageParameter;
+import com.wenwo.message.entity.MessageParameter.IdType;
+import com.wenwo.platform.doctor.service.IDrQuestionService;
+import com.wenwo.platform.doctor.service.IWenwoUserDoctorService;
+import com.wenwo.platform.entity.WenwoUser;
+import com.wenwo.platform.entity.doctor.DrQuestion;
+import com.wenwo.platform.exception.WenwoException;
+import com.wenwo.platform.service.IWenwoPlatformUserService;
+
+/**
+ * @author acer
+ *
+ */
+public class ExternalContextBuilder {
+
+	private final Logger logger = LoggerFactory.getLogger(ExternalContextBuilder.class);
+	
+	@Resource
+	private IDrQuestionService drQuestionService;
+	@Resource
+	private IWenwoPlatformUserService wenwoPlatformUserService;  //wenwo用户表
+	@Resource
+	private IWenwoUserDoctorService wenwoUserDoctorService;
+	
+	public VelocityContext buildContext(MessageParameter parameter){
+		if (parameter == null) {
+			return new VelocityContext();
+		}
+		
+		VelocityContext context = new VelocityContext(parameter.getProperties());
+		IdType idType = parameter.getIdType();
+		String id = parameter.getId();
+		String userId=(String)parameter.getProperties().get("userId");
+		logger.info("userId is:"+userId);
+		WenwoUser user=wenwoUserDoctorService.findById(userId);
+		if(user==null){
+			logger.info("user为空");
+		}
+		if(idType == IdType.QUESTION){
+			DrQuestion drQuestion = drQuestionService.findById(id);
+			if (drQuestion != null) {
+				context.put(TemplateConstants.CONTEXT_QUESTION, drQuestion);
+			}
+		}
+		context.put(TemplateConstants.CONTEXT_ALI_NICKNAME,user.getNickName());
+		context.put(TemplateConstants.CONTEXT_CURRENT_TIME, Calendar.getInstance());
+		context.put(TemplateConstants.ID_TYPE, idType);
+		context.put(TemplateConstants.CONTEXT_DOCTOR_PARAMETER,parameter.getProperties());
+		logger.info("基于parameter构建velocity的上下文对象成功");
+		
+		return context;
+	}
+}

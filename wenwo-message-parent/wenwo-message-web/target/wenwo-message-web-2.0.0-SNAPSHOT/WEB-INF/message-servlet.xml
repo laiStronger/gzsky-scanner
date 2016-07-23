@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xsi:schemaLocation="
+			http://www.springframework.org/schema/beans 
+			classpath:/org/springframework/beans/factory/xml/spring-beans-3.1.xsd
+			http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.2.xsd
+			http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-3.1.xsd">
+				
+	<bean id="propertyConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+		<property name="locations">
+			<list>
+				<value>WEB-INF/config/message.properties</value>
+				<value>WEB-INF/config/wenwo-rpc.properties</value>
+			</list>
+		</property>
+		<property name="fileEncoding"><value>UTF-8</value></property>
+	</bean>
+	<import resource="config/wenwo-web-common.xml"/>
+	<import resource="config/wenwo-message-web.xml"/>
+	<import resource="config/wenwo-message-rpc.xml"/>
+	<import resource="config/context-spring-security.xml"/>
+</beans>

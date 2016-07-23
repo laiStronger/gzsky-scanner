@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="
+			http://www.springframework.org/schema/context 
+			classpath:/org/springframework/context/config/spring-context-3.1.xsd
+			http://www.springframework.org/schema/beans 
+			classpath:/org/springframework/beans/factory/xml/spring-beans-3.1.xsd
+			http://www.springframework.org/schema/aop 
+			http://www.springframework.org/schema/aop/spring-aop-3.2.xsd
+			http://www.springframework.org/schema/tx 
+			http://www.springframework.org/schema/tx/spring-tx-3.1.xsd" 
+			default-autowire="byName">
+	
+	<context:component-scan base-package="com.wenwo.message.chain"/>
+	 <bean id="messageChainContainer" class="com.wenwo.message.chain.MessageChainContainer" init-method="load">
+	 </bean>
+	
+	<!-- 消息队列监听 -->
+	<bean id="messageQueueListener" class="com.wenwo.message.redis.MessageQueueListener" init-method="init">
+		<property name="taskExecutor" ref="taskExecutor"></property>
+		<property name="messageJedisPool" ref="jedisPool"></property>
+		<property name="sender" ref="messageSender"></property>
+	</bean>
+	
+	<bean id="taskExecutor" class="org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor">
+		<property name="corePoolSize" value="200" />
+		<property name="keepAliveSeconds" value="200" />
+		<property name="maxPoolSize" value="200" />
+	</bean>
+	
+	<!-- 监听配置变化的消息 -->
+	<bean id="configChangeSub" class="com.wenwo.message.redis.ConfigChangeSub" init-method="init">
+		<property name="shardedJedisPool" ref="shardedJedisPool"></property>
+		<property name="messageChainContainer" ref="messageChainContainer"></property>
+		<property name="jMagickImageBuilder" ref="jMagickImageBuilder"></property>
+	</bean>
+	
+	<bean id="velocityEngine" class="org.springframework.ui.velocity.VelocityEngineFactoryBean">
+		<property name="configLocation" value="classpath:/velocity.properties"/>
+	</bean>
+	
+</beans>

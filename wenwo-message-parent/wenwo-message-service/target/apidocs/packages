@@ -1,0 +1,6 @@
+com.wenwo.main
+com.wenwo.message.config
+com.wenwo.message.helper
+com.wenwo.message.redis
+com.wenwo.message.service
+com.wenwo.message.utils

@@ -1,0 +1,63 @@
+<project name="test" default="" basedir=".">
+	<property name="app.home" value=".." />
+	<property name="target.home" value="${app.home}/target"/>
+	<property name="config.home" value="${app.home}/src/main/webapp/WEB-INF/config"/>
+	<property name="zip.name" value="wenwo-message-process-2.0.0-SNAPSHOT-bin.zip"/>
+	<property name="backup.name" value="wenwo-message-process-2.0.0-SNAPSHOT"/>
+    
+	<property name="ip" value="192.168.1.50"/> <!--ip-->
+	<property name="username" value="root"/> <!--username-->
+	<property name="password" value="doudou"/> <!--password-->
+	
+	<echo>发布消息系统process，到测试机${ip}</echo>
+	<echo>操作：选中build就可以</echo>
+	
+	<tstamp>
+		    <format property="TODAY" pattern="yyyyMMdd_hh_mm" locale="zh"/>
+	</tstamp>
+	<echo>当前日期：${TODAY}</echo>
+	
+	<!--第一步,停止线程和备份-->
+	<target name="backupProject" description="备份">
+				<echo>
+					${ip}：第一步,开始备份......
+				</echo>
+				<sshexec host="${ip}" username="${username}" password="${password}"  
+				        		trust="true" command="cd /usr/local/wenwo-message-process-2.0.0-SNAPSHOT;sh messageProcessStart.sh stop;mv ${backup.name} ${backup.name}${TODAY};"/>  
+	</target>
+	
+	<!--第二步，上传zip包-->
+	<target name="uploadWar" depends="backupProject">
+		<echo>
+			${ip}：第二步，上传${zip.name}......
+		</echo>
+		<scp file="${target.home}/${zip.name}" todir="${username}:${password}@${ip}:/usr/local" trust="true"/>
+	</target>
+	
+	<!--第三步，解压-->
+	<target name="prepareProject" depends="uploadWar">
+			<echo>
+				${ip}：第三步，开始解压${zip.name}......
+			</echo>
+			<sshexec host="${ip}" username="${username}"  password="${password}"  
+			        		trust="true" command="cd /usr/local;unzip ${zip.name};"/>  
+	</target>
+	
+	<!--第四步,启动线程-->
+	<target name="startup" depends="prepareProject">
+		<echo>
+			${ip}：第四步,启动线程...
+		</echo>
+		<sshexec host="${ip}" username="${username}"  password="${password}"  
+				        		trust="true" command="cd /usr/local/${backup.name};pwd;sh messageProcessStart.sh stop;sh messageProcessStart.sh start;"/>  
+	</target>
+	
+	<!--总的-->
+	<target name="build" depends="startup" description="一键发版">
+		   <echo>
+				${ip}：完成
+				zip.name = ${zip.name}
+			</echo>
+	</target>
+	
+</project>

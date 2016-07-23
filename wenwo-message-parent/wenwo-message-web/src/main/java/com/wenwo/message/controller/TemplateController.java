@@ -1,0 +1,453 @@
+package com.wenwo.message.controller;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import org.apache.commons.fileupload.FileItem;
+import org.apache.commons.fileupload.FileItemFactory;
+import org.apache.commons.fileupload.disk.DiskFileItemFactory;
+import org.apache.commons.fileupload.servlet.ServletFileUpload;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.web.servlet.ModelAndView;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.reflect.TypeToken;
+import com.wenwo.bin.api.ImageService;
+import com.wenwo.message.api.IInternalTemplateService;
+import com.wenwo.message.api.IMessageTypeService;
+import com.wenwo.message.api.IShareService;
+import com.wenwo.message.api.IVariableService;
+import com.wenwo.message.enums.MessageProjectType;
+import com.wenwo.message.model.CollTemplate;
+import com.wenwo.message.model.MessageType;
+import com.wenwo.message.model.MessageType.TemplateInfoType;
+import com.wenwo.message.model.PicTemplate;
+import com.wenwo.message.model.PicTemplate.CutInfo;
+import com.wenwo.message.model.PicTemplate.ImageInfo;
+import com.wenwo.message.model.PicTemplate.LineInfo;
+import com.wenwo.message.model.PicTemplate.TextInfo;
+import com.wenwo.message.model.TextTemplate;
+import com.wenwo.message.model.Variable;
+import com.wenwo.message.model.Variable.VariableType;
+
+public class TemplateController extends BaseController {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(TemplateController.class);
+	private IInternalTemplateService internalTemplateService;
+	private IMessageTypeService messageTypeService;
+	private IVariableService variableService;
+	private ImageService imageService;
+	private String picBaseUrl;
+	private IShareService shareService;
+
+	public void submitTextTemplate(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		String messageTypeId = request.getParameter("message_type_id");
+		if (StringUtils.isEmpty(messageTypeId)) {
+			LOGGER.info("请传入有效messageTypeId");
+			return;
+		}
+		String content = request.getParameter("template_content");
+
+		if (StringUtils.isEmpty(content)) {
+			LOGGER.info("请传入有效模版内容");
+			return;
+		}
+		String templateId = request.getParameter("template_id");
+		String templateInfoType = request.getParameter("template_info_type");
+		TemplateInfoType infoType = getTemplateInfoType(templateInfoType);
+
+		// TODO:增加登陆用户信息
+		if (StringUtils.isEmpty(templateId)) {
+			// 更新哪种模版
+			TextTemplate textTemplate = internalTemplateService.createTextTemplate(content, null);
+			templateId = (textTemplate == null) ? null : textTemplate.getId();
+			LOGGER.info("dbTempalteId is {}", templateId);
+			// 更新消息类型的template信息
+			messageTypeService.updateTextTemplateInfo(messageTypeId, templateId, infoType);
+		} else {
+			internalTemplateService.updateTextTemplate(templateId, content, null);
+		}
+
+		Map<String, Object> resultMap = new HashMap<String, Object>();
+		resultMap.put("templateId", templateId);
+		resultMap.put("messageTypeId", messageTypeId);
+		resultMap.put("infoType", infoType);
+		this.printSuccess(response, resultMap);
+	}
+
+	public ModelAndView textTemplateEditPage(HttpServletRequest request, HttpServletResponse response) {
+		ModelAndView mv = new ModelAndView("template/text_template_body");
+		String template_info_type = request.getParameter("info_type");
+		mv.addObject("info_type", template_info_type);
+		return mv;
+	}
+
+	public void uploadBackPic(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		if (!ServletFileUpload.isMultipartContent(request)) {
+			this.printFailed(response, "非multipart");
+			return;
+		}
+
+		FileItemFactory factory = new DiskFileItemFactory();
+		ServletFileUpload upload = new ServletFileUpload(factory);
+		Iterator<FileItem> iterator = upload.parseRequest(request).iterator();
+		while (iterator.hasNext()) {
+			FileItem item = iterator.next();
+			if ("back_pic".equals(item.getFieldName())) {
+				String picId = imageService.save(item.get());
+				Map<String, String> picIdMap = new HashMap<String, String>();
+				picIdMap.put("picId", picId);
+				picIdMap.put("picUrl", this.picBaseUrl + picId);
+				this.printSuccess(response, picIdMap);
+				break;
+			}
+
+		}
+	}
+
+	public ModelAndView collectionTemplate(HttpServletRequest request, HttpServletResponse response) {
+		ModelAndView mv = new ModelAndView("template/coll_template");
+		Map<VariableType, List<Variable>> variableMap = variableService.groupVariableByType(MessageProjectType.DEFAULT);
+
+		mv.addObject("variableMap", variableMap);
+		CollTemplate collTemplate = internalTemplateService.getCollTemplate();
+		if (collTemplate == null) {
+			return mv;
+		}
+
+		mv.addObject("template", collTemplate);
+
+		return mv;
+	}
+
+	public void saveOrUpdateCollTemplate(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		String template_content = request.getParameter("template_content");
+		String period = request.getParameter("period");
+		String sinaAccGroupType = request.getParameter("sinaAccGroupType");
+		String qqAccGroupType = request.getParameter("qqAccGroupType");
+		String sinaGroupName = request.getParameter("sinaGroupName");
+		String qqGroupName = request.getParameter("qqGroupName");
+
+		if (StringUtils.isEmpty(template_content) || StringUtils.isEmpty(period)
+				|| StringUtils.isEmpty(sinaAccGroupType) || StringUtils.isEmpty(qqAccGroupType)
+				|| StringUtils.isEmpty(sinaGroupName) || StringUtils.isEmpty(qqGroupName)) {
+			return;
+		}
+		String templateId = request.getParameter("templateId");
+		CollTemplate collTemplate = null;
+		if (StringUtils.isEmpty(templateId)) {
+			collTemplate = new CollTemplate();
+			collTemplate.setTemplateContent(template_content);
+			collTemplate.setPeriod(Integer.parseInt(period));
+			collTemplate.setSinaAccGroupType(sinaAccGroupType);
+			collTemplate.setSinaGroupName(sinaGroupName);
+			collTemplate.setQqAccGroupType(qqAccGroupType);
+			collTemplate.setQqGroupName(qqGroupName);
+			internalTemplateService.addNewCollTemplate(collTemplate);
+		} else {
+			collTemplate = internalTemplateService.getCollTemplateById(templateId);
+			if (templateId != null) {
+				collTemplate.setTemplateContent(template_content);
+				collTemplate.setPeriod(Integer.parseInt(period));
+				collTemplate.setSinaAccGroupType(sinaAccGroupType);
+				collTemplate.setSinaGroupName(sinaGroupName);
+				collTemplate.setQqAccGroupType(qqAccGroupType);
+				collTemplate.setQqGroupName(qqGroupName);
+				internalTemplateService.updateCollTemplate(collTemplate);
+			}
+		}
+
+		this.printSuccess(response, "保存成功");
+
+	}
+
+	public ModelAndView getPicTemplate(HttpServletRequest request, HttpServletResponse response) {
+		ModelAndView mv = new ModelAndView("template/pic_template_body");
+
+		String projectType = request.getParameter("projectType");
+		MessageProjectType messageProjectType = StringUtils.isEmpty(projectType) ? MessageProjectType.DEFAULT
+				: MessageProjectType.valueOf(projectType);
+
+		Map<VariableType, List<Variable>> variableMap = variableService.groupVariableByType(messageProjectType);
+		mv.addObject("variableMap", variableMap);
+
+		String templateId = request.getParameter("template_id");
+		if (StringUtils.isEmpty(templateId)) {
+			return mv;
+		}
+		PicTemplate template = internalTemplateService.getPicTemplateById(templateId);
+		mv.addObject("pic_template", template);
+		return mv;
+	}
+
+	/**
+	 * 图片模板保存(message)
+	 * @param request
+	 * @param response
+	 * @throws Exception
+	 */
+	public void savePicTemplate(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		String messageTypeId = request.getParameter("msg_type_id");
+		MessageType messageType = messageTypeService.getMessageTypeById(messageTypeId);
+		if (messageType == null) {
+			this.printFailed(response, "无效消息类型");
+			return;
+		}
+
+		String templateid = request.getParameter("picTemplateId");
+		
+		PicTemplate dbTemplate = null;
+		//如果该消息类型有微博消息图片模板
+		if(!templateid.trim().equals("")) {
+			//得到页面的template
+			dbTemplate = this.getPicTemplateFromRequest(request, null);
+			dbTemplate.setId(templateid);
+			internalTemplateService.updatePicTemplate(dbTemplate);
+			
+		} else {  //初次保存模板
+			PicTemplate initTemplate = this.getPicTemplateFromRequest(request, null);
+			dbTemplate = internalTemplateService.savePicTemplate(initTemplate);
+			
+			if (dbTemplate == null) {
+				this.printFailed(response, "保存模版失败");
+				return;
+			}
+		}
+		
+		messageTypeService.updatePicTemplateInfo(messageTypeId, dbTemplate.getId(), TemplateInfoType.WEIBO);
+
+		Map<String, String> returnParam = new HashMap<String, String>();
+		returnParam.put("messageTypeId", messageTypeId);
+		returnParam.put("templateId", dbTemplate.getId());
+		this.printSuccess(response, returnParam);
+	}
+
+	/**
+	 * 图片模板保存(share)
+	 * @param request
+	 * @param response
+	 * @throws Exception
+	 */
+	public void savePicTemplateToShare(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		String messageTypeId = request.getParameter("msg_type_id");
+		
+		/*PicTemplate template = this.getPicTemplateFromRequest(request, null);
+		PicTemplate dbTemplate = internalTemplateService.savePicTemplate(template);
+
+		if (dbTemplate == null) {
+			this.printFailed(response, "保存模版失败");
+			return;
+		}*/
+
+        String templateid = request.getParameter("picTemplateId");
+		
+		PicTemplate dbTemplate = null;
+		//如果该消息类型有微博消息图片模板
+		if(!templateid.trim().equals("")) {
+			//得到页面的template
+			dbTemplate = this.getPicTemplateFromRequest(request, null);
+			dbTemplate.setId(templateid);
+			internalTemplateService.updatePicTemplate(dbTemplate);
+			
+		} else {  //初次保存模板
+			PicTemplate initTemplate = this.getPicTemplateFromRequest(request, null);
+			dbTemplate = internalTemplateService.savePicTemplate(initTemplate);
+			
+			if (dbTemplate == null) {
+				this.printFailed(response, "保存模版失败");
+				return;
+			}
+		}
+		
+		shareService.updateShare(messageTypeId, dbTemplate.getId());
+		Map<String, String> returnParam = new HashMap<String, String>();
+		returnParam.put("messageTypeId", messageTypeId);
+		returnParam.put("templateId", dbTemplate.getId());
+		this.printSuccess(response, returnParam);
+	}
+
+	/**
+	 * 得到页面的pieTemplate
+	 * @param request
+	 * @return
+	 * @throws IOException
+	 */
+	private PicTemplate getPicTemplateFromRequest(HttpServletRequest request, String actionUser) throws IOException {
+		PicTemplate picTemplate = new PicTemplate();
+		String jsonEncoded = request.getParameter("encoded");
+        JsonParser parser = new JsonParser();
+		JsonObject jsonObject = parser.parse(jsonEncoded).getAsJsonObject();
+//		String backPicId = jsonObject.get("back_pic_id").getAsString();
+//		picTemplate.setBackGroundPicId(backPicId);
+
+		//文本块
+		if (jsonObject.get("text_info") != null && !jsonObject.get("text_info").isJsonNull()) {
+			JsonArray textInfos = jsonObject.get("text_info").getAsJsonArray();
+			List<TextInfo> textInfoList = GSON.fromJson(textInfos, new TypeToken<List<TextInfo>>() {
+			}.getType());
+			picTemplate.setTextInfos(textInfoList);
+		} else {
+			picTemplate.setTextInfos(new ArrayList<TextInfo>());
+		}
+		
+		//图片块
+		if (jsonObject.get("pic_info") != null && !jsonObject.get("pic_info").isJsonNull()) {
+			JsonArray pic_infos = jsonObject.get("pic_info").getAsJsonArray();
+			List<ImageInfo> picInfoList = GSON.fromJson(pic_infos, new TypeToken<List<ImageInfo>>() {
+			}.getType());
+			picTemplate.setImageInfos(picInfoList);
+		}else {
+			picTemplate.setImageInfos(new ArrayList<ImageInfo>());
+		}
+
+		//分割线
+		if(jsonObject.get("line_info") != null && !jsonObject.get("line_info").isJsonNull()){
+			JsonObject lineInfoJson = jsonObject.get("line_info").getAsJsonObject();
+			if(isValidLineInfo(lineInfoJson)){
+				LineInfo lineInfo = GSON.fromJson(lineInfoJson, LineInfo.class);
+				picTemplate.setLineInfo(lineInfo);
+			}
+		}
+		
+		JsonElement cutInfoHeight = jsonObject.get("cut_info_height");
+		JsonElement cutInfoWidth = jsonObject.get("cut_info_width");
+
+		if (cutInfoHeight != null && cutInfoWidth != null && !cutInfoHeight.isJsonNull() && !cutInfoWidth.isJsonNull()
+				&& !StringUtils.isEmpty(cutInfoHeight.getAsString())
+				&& !StringUtils.isEmpty(cutInfoWidth.getAsString())) {
+			CutInfo cutInfo = new CutInfo();
+			cutInfo.setHeight(Integer.parseInt(cutInfoHeight.getAsString()));
+			cutInfo.setWidth(Integer.parseInt(cutInfoWidth.getAsString()));
+			picTemplate.setCutInfo(cutInfo);
+		}
+
+		picTemplate.setInputor(actionUser);
+		return picTemplate;
+	}
+
+	private boolean isValidLineInfo(JsonObject lineInfoJson) {
+		if(lineInfoJson == null || lineInfoJson.isJsonNull()){
+			return false;
+		}
+		
+		if(lineInfoJson.get("x") == null || lineInfoJson.get("x").isJsonNull() || StringUtils.isEmpty(lineInfoJson.get("x").getAsString())){
+			return false;
+		}
+		
+		if(lineInfoJson.get("y") == null || lineInfoJson.get("y").isJsonNull() || StringUtils.isEmpty(lineInfoJson.get("y").getAsString())){
+			return false;
+		}
+		
+		if(lineInfoJson.get("height") == null || lineInfoJson.get("height").isJsonNull() || StringUtils.isEmpty(lineInfoJson.get("height").getAsString())){
+			return false;
+		}
+		
+		if(lineInfoJson.get("width") == null || lineInfoJson.get("width").isJsonNull() || StringUtils.isEmpty(lineInfoJson.get("width").getAsString())){
+			return false;
+		}
+		return true;
+	}
+
+	public void getTextTemplate(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		String templateId = request.getParameter("templateId");
+		if (StringUtils.isEmpty(templateId)) {
+			this.printFailed(response, "请传入templateId");
+			return;
+		}
+		TextTemplate textTemplate = internalTemplateService.getTextTemplateById(templateId);
+		if (textTemplate == null) {
+			this.printFailed(response, "文本模版不存在" + templateId);
+			return;
+		}
+
+		this.printSuccess(response, textTemplate);
+	}
+
+	public ModelAndView getTextTemplateView(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		ModelAndView mv = new ModelAndView("template/text_template_body");
+
+		String templateInfoType = request.getParameter("templateInfoType");
+		mv.addObject("templateInfoType", templateInfoType);
+		String messageTypeId = request.getParameter("messageTypeId");
+		mv.addObject("messageTypeId", messageTypeId);
+
+		String projectType = request.getParameter("projectType");
+		MessageProjectType messageProjectType = StringUtils.isEmpty(projectType) ? MessageProjectType.DEFAULT
+				: MessageProjectType.valueOf(projectType);
+
+		Map<VariableType, List<Variable>> variableMap = variableService.groupVariableByType(messageProjectType);
+		mv.addObject("variableMap", variableMap);
+
+		String templateId = request.getParameter("templateId");
+		if (StringUtils.isEmpty(templateId)) {
+			return mv;
+		}
+		TextTemplate textTemplate = internalTemplateService.getTextTemplateById(templateId);
+		mv.addObject("template", textTemplate);
+
+		return mv;
+	}
+
+	/**
+	 * @param templateInfoType
+	 * @return
+	 */
+	private TemplateInfoType getTemplateInfoType(String templateInfoType) {
+		TemplateInfoType typeInfo = TemplateInfoType.valueOf(templateInfoType);
+		return typeInfo;
+	}
+
+	public IInternalTemplateService getInternalTemplateService() {
+		return internalTemplateService;
+	}
+
+	public void setInternalTemplateService(IInternalTemplateService internalTemplateService) {
+		this.internalTemplateService = internalTemplateService;
+	}
+
+	public IMessageTypeService getMessageTypeService() {
+		return messageTypeService;
+	}
+
+	public void setMessageTypeService(IMessageTypeService messageTypeService) {
+		this.messageTypeService = messageTypeService;
+	}
+
+	public ImageService getImageService() {
+		return imageService;
+	}
+
+	public void setImageService(ImageService imageService) {
+		this.imageService = imageService;
+	}
+
+	public String getPicBaseUrl() {
+		return picBaseUrl;
+	}
+
+	public void setPicBaseUrl(String picBaseUrl) {
+		this.picBaseUrl = picBaseUrl;
+	}
+
+	public IVariableService getVariableService() {
+		return variableService;
+	}
+
+	public void setVariableService(IVariableService variableService) {
+		this.variableService = variableService;
+	}
+
+	public void setShareService(IShareService shareService) {
+		this.shareService = shareService;
+	}
+
+}

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ClassDiagram>
+    <Class name="com.wenwo.message.endpoint.impl.PhoneInsiteEndpoint"
+        x="159" y="722">
+        <AttributesDisplayFilter public-accepted="true"
+            private-accepted="true" protected-accepted="true"
+            default-accepted="true" static-accepted="false"/>
+        <MethodDisplayFilter public-accepted="true"
+            private-accepted="false" protected-accepted="false"
+            default-accepted="false" static-accepted="false"
+            accessors-accepted="false" constructors-accepted="false"/>
+        <Extension destinationClassName="com.wenwo.message.endpoint.AbstractInsiteEndpoint"/>
+    </Class>
+    <Class name="com.wenwo.message.chain.DefaultMessageEndpointChain"
+        x="38" y="281">
+        <AttributesDisplayFilter public-accepted="true"
+            private-accepted="true" protected-accepted="true"
+            default-accepted="true" static-accepted="false"/>
+        <MethodDisplayFilter public-accepted="true"
+            private-accepted="false" protected-accepted="false"
+            default-accepted="false" static-accepted="false"
+            accessors-accepted="false" constructors-accepted="false"/>
+        <Extension destinationClassName="com.wenwo.message.chain.IMessageEndpointChain"/>
+        <Association
+            destinationClassName="com.wenwo.message.endpoint.IMessageEndpoint"
+            endpointName="messageEndpointList" kind="Simple"/>
+        <Communication destinationClassName="com.wenwo.message.endpoint.IMessageEndpoint"/>
+    </Class>
+    <Class name="com.wenwo.message.endpoint.AbstractInsiteEndpoint"
+        x="169" y="556">
+        <AttributesDisplayFilter public-accepted="true"
+            private-accepted="true" protected-accepted="true"
+            default-accepted="true" static-accepted="false"/>
+        <MethodDisplayFilter public-accepted="true"
+            private-accepted="false" protected-accepted="false"
+            default-accepted="false" static-accepted="false"
+            accessors-accepted="false" constructors-accepted="false"/>
+        <Extension destinationClassName="com.wenwo.message.endpoint.IMessageEndpoint"/>
+    </Class>
+    <Class name="com.wenwo.message.endpoint.IMessageEndpoint" x="227" y="458">
+        <AttributesDisplayFilter public-accepted="true"
+            private-accepted="true" protected-accepted="true"
+            default-accepted="true" static-accepted="false"/>
+        <MethodDisplayFilter public-accepted="true"
+            private-accepted="false" protected-accepted="false"
+            default-accepted="false" static-accepted="false"
+            accessors-accepted="false" constructors-accepted="false"/>
+    </Class>
+    <Class name="com.wenwo.message.chain.IMessageEndpointChain" x="209" y="181">
+        <AttributesDisplayFilter public-accepted="true"
+            private-accepted="true" protected-accepted="true"
+            default-accepted="true" static-accepted="false"/>
+        <MethodDisplayFilter public-accepted="true"
+            private-accepted="false" protected-accepted="false"
+            default-accepted="false" static-accepted="false"
+            accessors-accepted="false" constructors-accepted="false"/>
+    </Class>
+    <Class name="com.wenwo.message.endpoint.impl.WebInsiteEndpoint"
+        x="537" y="741">
+        <AttributesDisplayFilter public-accepted="true"
+            private-accepted="true" protected-accepted="true"
+            default-accepted="true" static-accepted="false"/>
+        <MethodDisplayFilter public-accepted="true"
+            private-accepted="false" protected-accepted="false"
+            default-accepted="false" static-accepted="false"
+            accessors-accepted="false" constructors-accepted="false"/>
+        <Extension destinationClassName="com.wenwo.message.endpoint.AbstractInsiteEndpoint"/>
+    </Class>
+    <Class name="com.wenwo.message.endpoint.impl.PhonePushEndpoint"
+        x="357" y="736">
+        <AttributesDisplayFilter public-accepted="true"
+            private-accepted="true" protected-accepted="true"
+            default-accepted="true" static-accepted="false"/>
+        <MethodDisplayFilter public-accepted="true"
+            private-accepted="false" protected-accepted="false"
+            default-accepted="false" static-accepted="false"
+            accessors-accepted="false" constructors-accepted="false"/>
+        <Extension destinationClassName="com.wenwo.message.endpoint.AbstractInsiteEndpoint"/>
+    </Class>
+</ClassDiagram>

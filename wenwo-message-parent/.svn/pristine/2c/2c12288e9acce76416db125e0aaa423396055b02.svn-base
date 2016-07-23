@@ -1,0 +1,377 @@
+package com.wenwo.message.chain;
+
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.annotation.Resource;
+
+import org.apache.velocity.app.VelocityEngine;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import redis.clients.jedis.ShardedJedisPool;
+
+import com.wenwo.message.api.IInternalConfigService;
+import com.wenwo.message.channel.WeiboChannel;
+import com.wenwo.message.dao.IMessageDao;
+import com.wenwo.message.endpoint.filter.FilterSelector;
+import com.wenwo.message.endpoint.filter.IEndpointFilter;
+import com.wenwo.message.endpoint.impl.PhoneInsiteEndpoint;
+import com.wenwo.message.endpoint.impl.PhonePushEndpoint;
+import com.wenwo.message.endpoint.impl.PriMessageEndpoint;
+import com.wenwo.message.endpoint.impl.SMSMessageEndpoint;
+import com.wenwo.message.endpoint.impl.ShareEndpoint;
+import com.wenwo.message.endpoint.impl.WebInsiteEndpoint;
+import com.wenwo.message.endpoint.impl.WeiboAtEndpoint;
+import com.wenwo.message.endpoint.impl.WeiboBatchEndpoint;
+import com.wenwo.message.enums.MessageProjectType;
+import com.wenwo.message.helper.IPhonePushHelper;
+import com.wenwo.message.im4java.JMagickImageBuilder;
+import com.wenwo.message.model.MessageTempConfig;
+import com.wenwo.message.model.MessageType;
+import com.wenwo.message.model.MessageType.MessageTypeChannel;
+import com.wenwo.message.model.MessageType.TemplateInfo;
+import com.wenwo.message.model.ProjectChannel;
+import com.wenwo.message.model.WeiboShareType;
+import com.wenwo.message.printer.ExceptionPrinter;
+import com.wenwo.message.template.gen.ContentGenerator;
+import com.wenwo.message.utils.PlatformMongoUtil;
+import com.wenwo.message.utils.RedisUtil;
+import com.wenwo.platform.doctor.service.IWeiwenDoctorService;
+import com.wenwo.platform.service.IAnswerService;
+import com.wenwo.platform.service.IQuestionService;
+import com.wenwo.platform.types.project.SubprojectType;
+import com.wenwo.platform.utils.CheckUtils;
+import com.wenwo.sms.api.ISMSService;
+import com.wenwo.weibo4j.AccGroup;
+import com.wenwo.weiboproxy.service.IWeiboProxyService;
+import com.wenwo.weiboproxy.service.WeiboBigNodeFacade;
+
+/**
+ * @author StanleyDing
+ * 
+ */
+public class MessageChainContainer {
+	private final Logger logger = LoggerFactory.getLogger(getClass());
+
+	@Resource
+	private IInternalConfigService internalConfigService;
+
+	@Autowired
+	private IPhonePushHelper phonePushHelper;
+
+	@Autowired
+	private VelocityEngine velocityEngine;
+
+	@Autowired
+	private IMessageDao messageDao;
+	
+	@Autowired
+	private PlatformMongoUtil platformMongoUtil;
+	
+	@Autowired
+	private RedisUtil redisUtil;
+	
+	@Autowired
+	private FilterSelector filterSelector;
+	
+
+	private JMagickImageBuilder jMagickImageBuilder;
+	
+	@Resource
+	private ISMSService smsService;
+	
+	@Resource
+	private IWeiwenDoctorService weiwenDoctorService;
+
+	public void setjMagickImageBuilder(JMagickImageBuilder jMagickImageBuilder) {
+		this.jMagickImageBuilder = jMagickImageBuilder;
+	}
+
+	private ExceptionPrinter exceptionPrinter;
+	private ShardedJedisPool shardedJedisPool;
+
+	@Resource
+	private WeiboBigNodeFacade weiboBigNodeFacade;
+
+	@Resource
+	private IWeiboProxyService weiboProxyService;
+	
+	@Resource
+	private IQuestionService questionService;
+	
+	@Resource
+	private IAnswerService answerService;
+	
+	
+	
+	/**
+	 * 标准消息类型配置：消息类型====>消息处理责任链
+	 */
+	private Map<String, IMessageEndpointChain> standardMessageChainMap;
+	/**
+	 * 项目相关消息类型配置：项目====>消息类型=====>消息处理责任链
+	 */
+	private final Map<SubprojectType, Map<String, IMessageEndpointChain>> projectMessageChainMap = new EnumMap<SubprojectType, Map<String, IMessageEndpointChain>>(
+			SubprojectType.class);
+
+	/**
+	 * 同步（分享）配置：分享类型====>处理责任链
+	 */
+	private Map<String, IMessageEndpointChain> stardardShareChainMap;
+
+	/**
+	 * 项目相关同步（分享）配置：配置：项目====>分享类型=====>处理责任链
+	 */
+	private final Map<SubprojectType, Map<String, IMessageEndpointChain>> projectShareChainMap = new EnumMap<SubprojectType, Map<String, IMessageEndpointChain>>(
+			SubprojectType.class);
+	
+	
+	public void setExceptionPrinter(ExceptionPrinter exceptionPrinter) {
+		this.exceptionPrinter = exceptionPrinter;
+	}
+
+	
+	
+	/**
+	 * 构建消息处理链
+	 */
+	public void load() {
+		logger.info("开始加载配置，构建消息处理链");
+		List<MessageTempConfig> tempConfigList = internalConfigService.loadAllTempConfig();
+        
+		if (tempConfigList == null || tempConfigList.size() == 0) {
+			logger.info("临时表无数据，先从正常表加载一遍数据");
+			internalConfigService.reloadConfiguration();
+			tempConfigList = internalConfigService.loadAllTempConfig();
+		}
+
+		//循环每一个subprojecttype
+		for (MessageTempConfig tempConfig : tempConfigList) {
+			logger.info("开始为{}构建消息处理链", tempConfig.getMessageProjectType());
+			//构建message处理链
+			Map<String, IMessageEndpointChain> messageChainMap = buildMessageChain(tempConfig);
+			if (tempConfig.getMessageProjectType() == MessageProjectType.DEFAULT) {
+				standardMessageChainMap = messageChainMap;
+			} else {
+				projectMessageChainMap.put(SubprojectType.valueOf(tempConfig.getMessageProjectType().name()),
+						messageChainMap);
+			}
+
+			//构建share处理链
+			Map<String, IMessageEndpointChain> shareChainMap = buildShareChain(tempConfig);
+			if (tempConfig.getMessageProjectType() == MessageProjectType.DEFAULT) {
+				stardardShareChainMap = shareChainMap;
+			} else {
+				projectShareChainMap.put(SubprojectType.valueOf(tempConfig.getMessageProjectType().name()),
+						shareChainMap);
+			}
+			logger.info("为{}构建消息处理链完毕", tempConfig.getMessageProjectType());
+		}
+	}
+
+	private Map<String, IMessageEndpointChain> buildShareChain(MessageTempConfig tempConfig) {
+		List<WeiboShareType> shareTypes = tempConfig.getShareTypes();
+		if (CheckUtils.isEmptyCollection(shareTypes)) {
+			return null;
+		}
+		Map<String, IMessageEndpointChain> chainMap = new HashMap<String, IMessageEndpointChain>();
+		ContentGenerator contentGenerator = new ContentGenerator(velocityEngine, tempConfig.getTextTemplateMap(),
+				tempConfig.getPicTemplateMap());
+		for (WeiboShareType shareType : shareTypes) {
+			DefaultMessageEndpointChain endpointChain = new DefaultMessageEndpointChain();
+			endpointChain.setExceptionPrinter(exceptionPrinter);
+
+			//TODO:转发时，发送的通道，实现在filter中，此处特殊需求，不需要配置
+			// 获取通道，分享现在使用项目默认的通道，因为有些微博是需要转发的
+			ProjectChannel defaultChannel = tempConfig.getDefaultChannel();
+			WeiboChannel qqChannel = new WeiboChannel(SubprojectType.valueOf(defaultChannel.getQqAccGroupType()),
+					AccGroup.C6);
+			WeiboChannel sinaChannel = new WeiboChannel(SubprojectType.valueOf(defaultChannel.getSinaAccGroupType()),
+					AccGroup.C6);
+			// 分享处理链，目前只是发微博这一个endpoint，但这个机制保证了将来良好的扩展性，而且逻辑上和消息处理保持一致，也方便处理
+			List<IEndpointFilter> pointFilterList = filterSelector.select(tempConfig.getMessageProjectType().name(), 
+					shareType.getTypeName(), ShareEndpoint.class.getSimpleName());
+			ShareEndpoint shareEndpoint = new ShareEndpoint(shareType.getTextTemplateId(),
+					shareType.getReTextTemlateId(), shareType.getPicTemplateId(), contentGenerator, weiboProxyService,
+					weiboBigNodeFacade, jMagickImageBuilder, qqChannel, sinaChannel,questionService,answerService,redisUtil,pointFilterList);
+			endpointChain.addEndpoint(shareEndpoint);
+
+			chainMap.put(shareType.getTypeName(), endpointChain);
+			logger.info("已创建完项目{}下{}分享类型的处理链：{}", tempConfig.getMessageProjectType(), shareType.getTypeName(),
+					endpointChain);
+		}
+		return chainMap;
+	}
+
+	/**
+	 * 根据某一个项目的配置，创建该项目下所有消息类型的消息处理链 每个消息类型MessageType对应一个IMessageEndpointChain
+	 * 
+	 * @param tempConfig
+	 * @return
+	 */
+	private Map<String, IMessageEndpointChain> buildMessageChain(MessageTempConfig tempConfig) {
+		List<MessageType> messageTypes = tempConfig.getMessageTypes();
+		Map<String, IMessageEndpointChain> chainMap = new HashMap<String, IMessageEndpointChain>();
+		ContentGenerator contentGenerator = new ContentGenerator(velocityEngine, tempConfig.getTextTemplateMap(),
+				tempConfig.getPicTemplateMap());
+		for (MessageType messageType : messageTypes) {
+			// 为每个项目消息类型创建处理链
+			DefaultMessageEndpointChain endpointChain = new DefaultMessageEndpointChain();
+			endpointChain.setMessageType(messageType);
+			endpointChain.setExceptionPrinter(exceptionPrinter);
+			TemplateInfo templateInfo = messageType.getInsiteWebTemplateInfo();
+
+			// 站内消息
+			if (templateInfo != null && templateInfo.getIsNeed()) {
+				List<IEndpointFilter> pointFilterList = filterSelector.select(tempConfig.getMessageProjectType().name(), 
+						 messageType.getTypeName(), WebInsiteEndpoint.class.getSimpleName());
+				WebInsiteEndpoint endpoint = new WebInsiteEndpoint(contentGenerator, templateInfo.getTextTemplateId(),
+						messageDao,pointFilterList);
+				
+				endpointChain.addEndpoint(endpoint);
+			}
+
+			// 手机站内消息
+			templateInfo = messageType.getInsiteAppTemplateInfo();
+			if (templateInfo != null && templateInfo.getIsNeed()) {
+				List<IEndpointFilter> pointFilterList = filterSelector.select(tempConfig.getMessageProjectType().name(), 
+                        messageType.getTypeName(), PhoneInsiteEndpoint.class.getSimpleName());
+				PhoneInsiteEndpoint endpoint = new PhoneInsiteEndpoint(contentGenerator,
+						templateInfo.getTextTemplateId(), messageDao,pointFilterList);
+				endpointChain.addEndpoint(endpoint);
+			}
+            
+			// push消息
+			templateInfo = messageType.getPushTemplateInfo();
+			if (templateInfo != null && templateInfo.getIsNeed()) {
+				List<IEndpointFilter> pointFilterList = filterSelector.select(tempConfig.getMessageProjectType().name(), 
+                        messageType.getTypeName(), PhonePushEndpoint.class.getSimpleName());
+				PhonePushEndpoint endpoint = new PhonePushEndpoint(phonePushHelper, contentGenerator,
+						templateInfo.getTextTemplateId(), messageDao,pointFilterList);
+				endpointChain.addEndpoint(endpoint);
+			}
+			
+			//私信消息
+			templateInfo = messageType.getPriMessageTemplateInfo();
+			if (templateInfo != null && templateInfo.getIsNeed()) {
+				// 创建消息通道
+				WeiboChannel priqqChannel;
+				WeiboChannel prisinaChannel;
+				MessageTypeChannel typeChannel = messageType.getMessageTypeChannel();
+				
+				//通道
+				if (typeChannel != null && !typeChannel.getQqAccGroupType().trim().equals("") 
+						&& !typeChannel.getSinaAccGroupType().trim().equals("")) {
+					// 该消息类型配置了自有通道，则使用自有通道
+					priqqChannel = new WeiboChannel(SubprojectType.valueOf(typeChannel.getQqAccGroupType()),
+							AccGroup.valueOf(typeChannel.getQqGroupName()));
+					prisinaChannel = new WeiboChannel(SubprojectType.valueOf(typeChannel.getSinaAccGroupType()),
+							AccGroup.valueOf(typeChannel.getSinaGroupName()));
+				} else {
+					// 大多数情况下，都会使用标准通道
+					ProjectChannel defaultChannel = tempConfig.getDefaultChannel();
+					priqqChannel = new WeiboChannel(SubprojectType.valueOf(defaultChannel.getQqAccGroupType()),
+							AccGroup.valueOf(defaultChannel.getQqGroupType()));
+					prisinaChannel = new WeiboChannel(SubprojectType.valueOf(defaultChannel.getSinaAccGroupType()),
+							AccGroup.valueOf(defaultChannel.getSinaGroupType()));
+				}
+				
+				//私信设置
+				List<IEndpointFilter> pointFilterList = filterSelector.select(tempConfig.getMessageProjectType().name(), 
+                        messageType.getTypeName(), PriMessageEndpoint.class.getSimpleName());
+				PriMessageEndpoint endpoint = new PriMessageEndpoint(templateInfo.getTextTemplateId(),
+						templateInfo.getPicTemplateId(), contentGenerator,prisinaChannel, priqqChannel,
+						weiboBigNodeFacade, jMagickImageBuilder,messageDao, redisUtil,pointFilterList);
+				endpointChain.addEndpoint(endpoint);
+			}
+
+			if (messageType.getIsSendCollMessage()) {
+				// 集合消息
+				List<IEndpointFilter> pointFilterList = filterSelector.select(tempConfig.getMessageProjectType().name(), 
+                        messageType.getTypeName(), WeiboBatchEndpoint.class.getSimpleName());
+				WeiboBatchEndpoint endpoint = new WeiboBatchEndpoint(shardedJedisPool,pointFilterList);
+				endpointChain.addEndpoint(endpoint);
+			} else {
+				// 微博@或者评论
+				templateInfo = messageType.getWeiboTemplateInfo();
+				if (templateInfo != null && templateInfo.getIsNeed()) {
+					// 创建消息通道
+					WeiboChannel qqChannel;
+					WeiboChannel sinaChannel;
+					MessageTypeChannel typeChannel = messageType.getMessageTypeChannel();
+					
+					//通道
+					if (typeChannel != null && !typeChannel.getQqAccGroupType().trim().equals("") 
+							&& !typeChannel.getSinaAccGroupType().trim().equals("")) {
+						// 该消息类型配置了自有通道，则使用自有通道
+						qqChannel = new WeiboChannel(SubprojectType.valueOf(typeChannel.getQqAccGroupType()),
+								AccGroup.valueOf(typeChannel.getQqGroupName()));
+						sinaChannel = new WeiboChannel(SubprojectType.valueOf(typeChannel.getSinaAccGroupType()),
+								AccGroup.valueOf(typeChannel.getSinaGroupName()));
+					} else {
+						// 大多数情况下，都会使用标准通道
+						ProjectChannel defaultChannel = tempConfig.getDefaultChannel();
+						qqChannel = new WeiboChannel(SubprojectType.valueOf(defaultChannel.getQqAccGroupType()),
+								AccGroup.valueOf(defaultChannel.getQqGroupType()));
+						sinaChannel = new WeiboChannel(SubprojectType.valueOf(defaultChannel.getSinaAccGroupType()),
+								AccGroup.valueOf(defaultChannel.getSinaGroupType()));
+					}
+					
+					List<IEndpointFilter> pointFilterList = filterSelector.select(tempConfig.getMessageProjectType().name(), 
+	                        messageType.getTypeName(), WeiboAtEndpoint.class.getSimpleName());
+					WeiboAtEndpoint endpoint = new WeiboAtEndpoint(templateInfo.getTextTemplateId(),
+							templateInfo.getPicTemplateId(), contentGenerator, sinaChannel, qqChannel,
+							weiboBigNodeFacade, jMagickImageBuilder, redisUtil,platformMongoUtil,pointFilterList);
+					endpointChain.addEndpoint(endpoint);
+				}
+			}
+			
+			templateInfo =messageType.getSmsTemplateInfo();
+			if(templateInfo != null && templateInfo.getIsNeed()){
+				List<IEndpointFilter> pointFilterList = filterSelector.select(tempConfig.getMessageProjectType().name(), 
+                        messageType.getTypeName(), SMSMessageEndpoint.class.getSimpleName());
+				SMSMessageEndpoint endpoint=new SMSMessageEndpoint(templateInfo.getTextTemplateId(),
+						contentGenerator,messageDao,smsService,weiwenDoctorService,pointFilterList);
+				endpointChain.addEndpoint(endpoint);
+				
+			}
+			logger.info("已创建完项目{}下{}消息类型的处理链：{}", tempConfig.getMessageProjectType(), messageType.getTypeName(),
+					endpointChain);
+			chainMap.put(messageType.getTypeName(), endpointChain);
+		}
+		return chainMap;
+	}
+
+	public IMessageEndpointChain getMessageChannelChain(SubprojectType subprojectType, String messageType) {
+		Map<String, IMessageEndpointChain> chainMap = projectMessageChainMap.get(subprojectType);
+		if (chainMap == null) {
+			return standardMessageChainMap.get(messageType);
+		} else {
+			IMessageEndpointChain chain = chainMap.get(messageType);
+			if (chain == null) {
+				return standardMessageChainMap.get(messageType);
+			} else {
+				return chain;
+			}
+		}
+	}
+
+	public IMessageEndpointChain getShareChannelChain(SubprojectType subprojectType, String messageType) {
+		Map<String, IMessageEndpointChain> chainMap = projectShareChainMap.get(subprojectType);
+		if (chainMap == null) {
+			return stardardShareChainMap.get(messageType);
+		} else {
+			IMessageEndpointChain chain = chainMap.get(messageType);
+			if (chain == null) {
+				return stardardShareChainMap.get(messageType);
+			} else {
+				return chain;
+			}
+		}
+	}
+
+}

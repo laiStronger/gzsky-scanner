@@ -1,0 +1,201 @@
+package com.wenwo.message.utils;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.missian.client.sync.SyncMissianProxyFactory;
+import com.wenwo.message.api.IMessageService;
+import com.wenwo.message.entity.MessageParameter;
+import com.wenwo.message.entity.MessageParameter.IdType;
+import com.wenwo.platform.types.WeiboType;
+import com.wenwo.platform.types.project.SubprojectType;
+import com.wenwo.weibo4j.AccGroup;
+import com.wenwo.weibo4j.model.PostResult;
+import com.wenwo.weibo4j.model.PrivateMessageInfo;
+import com.wenwo.weibo4j.model.WeiboException;
+import com.wenwo.weiboproxy.service.WeiboBigNodeFacade;
+
+
+/**
+ * @author laisq
+ * 日常检查
+ */
+@SuppressWarnings("unused")
+public class DailyCheckMessage {
+
+	private static final Logger logger = LoggerFactory.getLogger(DailyCheckMessage.class);
+	private static IMessageService messageService;
+	private static WeiboBigNodeFacade weibo;
+	
+	
+	
+	/**
+	 * 启动
+	 */
+	@BeforeClass
+	public static void setUp(){
+		SyncMissianProxyFactory factory = new SyncMissianProxyFactory();
+		//本地
+		//messageService = factory.create(IMessageService.class, "tcp://127.0.0.1:18000/messageService");
+		//weibo = (WeiboBigNodeFacade) factory.create(WeiboBigNodeFacade.class, "tcp://127.0.0.1:18001/weiboBigNodeFacade");
+		
+		//测试机
+	    messageService = factory.create(IMessageService.class, "tcp://192.168.1.50:18000/messageService");
+	    weibo = (WeiboBigNodeFacade) factory.create(WeiboBigNodeFacade.class, "tcp://192.168.1.52:18001/weiboBigNodeFacade");
+	    
+		//正式机
+	    //messageService = factory.create(IMessageService.class, "tcp://10.8.2.207:18000/messageService");
+	    //weibo = (WeiboBigNodeFacade) factory.create(WeiboBigNodeFacade.class, "tcp://10.8.2.194:18001/weiboBigNodeFacade");
+	    
+	}
+	
+	/**
+	 * 匹配用户
+	 */
+	@Test
+	public void newMatchedUser(){
+		//匹配答案
+		String messageType = "newMatchedUser";
+		String targetUid = "527515d4e4b0ac17cf3b3244";  //自己新浪的
+		
+		String questionId = "7vQYgxMOQK1"; 
+		MessageParameter parameter = new MessageParameter(questionId, IdType.QUESTION, null);
+		parameter.addProperty("backgroud", true);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.WEIWEN, parameter);
+		System.out.println(msgId);
+	}
+	
+	
+	/**
+	 *1.提现相关消息 
+	 */
+	@Test
+	public void doctorExtractMessage(){
+		String messageType = "doctorExtractMessage";
+		String targetUid =   "527515d4e4b0ac17cf3b3244";  //
+		//String targetUid =   "4fdeef47073ae789019b9781";  //
+		Map<String,Object> map = new HashMap<String,Object>();
+		map.put("backgroud", true);
+		MessageParameter parameter = new MessageParameter(targetUid, IdType.USER, map);
+		String msgId = messageService.sendMessage(messageType, targetUid, SubprojectType.DOCTOR, parameter);
+		System.out.println(msgId);
+	}
+	
+	 /**
+     * 大账号发送(微问)
+     * @throws WeiboException
+     */
+	@Test
+	public void testPost() throws WeiboException {
+		String text = "@赖stronger 为网友向您寻求烦恼类问题的帮助：“weiwen ...”『帮助他人，赚积分，赢大奖』";
+		//weiwen通道
+		//PostResult result = weibo.post(text, "http://www.baidu.com/img/bdlogo.gif", null, AccGroup.C3, WeiboType.SINA,SubprojectType.WEIWEN);
+		PostResult result = weibo.post(text, null, null, AccGroup.C3, WeiboType.SINA,SubprojectType.WEIWEN);
+		System.out.println(result);
+	}
+	
+	 /**
+     * 大账号发送(微问医生)
+     * @throws WeiboException
+     */
+	@Test
+	public void testPostdr() throws WeiboException {
+		String text = "@赖stronger  ceshi";
+		//微问医生通道
+		//PostResult result = weibo.post(text, "http://www.baidu.com/img/bdlogo.gif", null, AccGroup.C3, WeiboType.SINA,SubprojectType.DOCTOR);
+		PostResult result = weibo.post(text, null, null, AccGroup.C3, WeiboType.SINA,SubprojectType.DOCTOR);
+		
+		System.out.println(result);
+	}
+	
+	/**
+     * 私信接口
+     * @throws WeiboException
+     */
+	@Test
+	public void testPrivateMessage() throws WeiboException {
+		String source = null;
+		Long receiver_id = 1864803505L;  //消息接收方的用户ID
+		String type = "text";     //需要以何种类型的消息类型发送。text：纯文本类型私信，articles：图文类型私信消息
+		String annotations = "";  //主要是为了方便第三方应用记录一些适合于自己使用的信息。每条微博可以包含一个或者多个元数据。必须为json做URLEncode后的字符串格式，字串长度不超过512个字符，具体内容可以自定。例：annotations='[{"type2":123}, {"a":"b", "c":"d"}]'; 
+		String data = "发私信1";
+		
+		PrivateMessageInfo info = weibo.privateMessage(source,receiver_id,type,
+				data,annotations,AccGroup.PRIMESSAGE, WeiboType.SINA,SubprojectType.DOCTOR);
+		System.out.println(info);         
+	}
+	
+	@SuppressWarnings("static-access")
+	public static void main(String args[]) throws Exception{
+		DailyCheckMessage check = new DailyCheckMessage();
+		check.setUp();
+		check.newMatchedUser();
+		check.doctorExtractMessage();
+		check.testPost();
+		check.testPostdr();
+		check.testPrivateMessage();
+	}
+	
+    //----------------------------------------------------------------------------------
+	
+	/**
+     * 删除微博
+     * @throws WeiboException
+     */
+	@Test
+	public void testMyDestroyWeibo() throws WeiboException {
+		Set<String> set = new HashSet<String>();
+		try {
+			set = getTargetmid();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		for(String weiboId : set) {
+			try {
+				Boolean flag = weibo.destroyWeibo(weiboId, AccGroup.C3, WeiboType.SINA, SubprojectType.DOCTOR);
+				System.out.println(flag);  
+			} catch(Throwable e) {
+				System.out.println("已经删除过了");
+			}
+		}
+		System.out.println("完成");  
+	}
+	
+	
+	public static Set<String> getTargetmid() throws IOException {
+   	 //文件绝对路径改成你自己的文件路径
+       FileReader fr=new FileReader("F:\\targetimg\\dest8.txt");
+       //可以换成工程目录下的其他文本文件
+       BufferedReader br=new BufferedReader(fr);
+       Set<String> set = new HashSet<String>();
+       
+       while(br.readLine()!=null){
+           String s=br.readLine();
+           if(s != null && !s.trim().equals("")) {
+           	String targetmid = s.substring(0,16);
+           	System.out.println(targetmid);
+           	set.add(targetmid);
+           }
+           
+       }
+       br.close();
+       return set;
+   }
+	
+	
+	
+	
+	
+	
+	
+}

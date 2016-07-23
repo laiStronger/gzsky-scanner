@@ -1,0 +1,268 @@
+package com.wenwo.message.config;
+
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.util.CollectionUtils;
+
+import com.wenwo.message.api.IChannelService;
+import com.wenwo.message.api.IInternalTemplateService;
+import com.wenwo.message.api.IMessageTypeService;
+import com.wenwo.message.api.IVariableService;
+import com.wenwo.message.dao.IMessageTypeDao;
+import com.wenwo.message.dao.IShareDao;
+import com.wenwo.message.dao.IVariableDao;
+import com.wenwo.message.enums.MessageProjectType;
+import com.wenwo.message.model.MessageTempConfig;
+import com.wenwo.message.model.MessageType;
+import com.wenwo.message.model.MessageType.TemplateInfo;
+import com.wenwo.message.model.PicTemplate;
+import com.wenwo.message.model.ProjectChannel;
+import com.wenwo.message.model.TextTemplate;
+import com.wenwo.message.model.Variable;
+import com.wenwo.message.model.WeiboShareType;
+import com.wenwo.message.utils.WenwoCollectionUtils;
+
+/**
+ * 配置加载工具类
+ * @author StanleyDing
+ * @date 2013-9-18
+ * @since 2.0
+ * 
+ * History：
+ * Date,	By,		What
+ * 2013-9-18,	StanleyDing, 	Create
+ */
+public class ConfigLoader {
+
+	private Logger logger = LoggerFactory.getLogger(getClass());
+	
+	@Autowired
+	private IVariableService variableService;
+	
+	@Autowired
+	private IInternalTemplateService internalTemplateService;
+	
+	@Autowired
+	private IChannelService channelService;
+	
+	@Autowired
+	private IMessageTypeService messageTypeService;
+	
+	@Autowired
+	private IMessageTypeDao messageTypeDao;
+	
+	@Autowired
+	private IVariableDao variableDao;
+	
+	@Autowired
+	private IShareDao shareDao;
+	
+	//多阅读这个类的代码
+	public void reloadConfiguration() {
+		logger.info("开始重新加载配置");
+		
+		List<Variable> variables = loadAllVariable();
+		List<TextTemplate> textTemplates = loadAllTextTemplate();
+		List<PicTemplate> picTemplates = loadAllPicTemplate();
+		List<ProjectChannel> projectChannels = loadAllChannel();
+		
+		Map<MessageProjectType, ProjectChannel> channelMap = new EnumMap<MessageProjectType, ProjectChannel>(MessageProjectType.class);
+		for(ProjectChannel projectChannel : projectChannels) {
+			channelMap.put(projectChannel.getMessageProjectType(), projectChannel);
+		}
+		
+		//模板更改
+		TemplateReplacer templateReplacer = new TemplateReplacer(variables, textTemplates, picTemplates);
+		
+		List<MessageType> messageTypes = loadAllMessageTypes();
+		Map<MessageProjectType, List<MessageType>> messageTypeMap = new EnumMap<MessageProjectType, List<MessageType>>(MessageProjectType.class);
+		for(MessageType messageType : messageTypes) {
+			WenwoCollectionUtils.addToMappedList(messageTypeMap, messageType.getMessageProjectType(), messageType);
+		}
+		
+		List<WeiboShareType> shareTypes = loadAllShareTypes();
+		Map<MessageProjectType, List<WeiboShareType>> shareTypeMap = new EnumMap<MessageProjectType, List<WeiboShareType>>(MessageProjectType.class);
+		for(WeiboShareType shareType : shareTypes) {
+			WenwoCollectionUtils.addToMappedList(shareTypeMap, shareType.getMessageProjectType(), shareType);
+		}
+		
+		logger.info("已从数据加载所有配置，准备进行变量替换");
+		
+		ArrayList<MessageTempConfig> tempConfigList = new ArrayList<MessageTempConfig>();
+		for(MessageProjectType messageProjectType : MessageProjectType.values()) {
+			List<MessageType> projectMessageTypes;
+			List<WeiboShareType> projectShareTypes;
+			if(messageProjectType==MessageProjectType.DEFAULT) {
+				projectMessageTypes = messageTypeMap.get(MessageProjectType.DEFAULT);
+				projectShareTypes = shareTypeMap.get(MessageProjectType.DEFAULT);
+			} 
+			/**
+			 * 每个项目类型全部需要变量替换，不管是否具有似有变量;
+			 * 因为当项目类型下没有似有变量时，照如下逻辑：
+			 * 该项目类型对应的 MessageTempConfig下的messageTypeList , ShareTypeList只会具有项目自己的消息或分享类型。
+			 * 以WENWO为例：
+			 * 当该WENWO发送消息时，会从默认里边获取消息处理链，问题在于：
+			 * 默认责任琏中的WeiboEndPoint使用的是默认微博发送通道。而WENWO应该使用自己项目本身的通道
+			 * 会造成微问大账号，发送问我的消息
+			 */
+//			else if(templateReplacer.hasPrivateVariables(messageProjectType)) {
+			else{
+				//该项目有私有变量，那么项目私有消息类型和标准消息类型，都得进行模板替换
+				/**
+				 * 若该项目类型（MessageProjectType）具有私有变量(Variable)，则私有变量覆盖默认变量，当该项目类型下的消息类型
+				 * 需要使用标准类型(MessageProjectType.DEFAULT)的模版时，模版的变量应该优先使用该项目中的同名私有变量
+				 */
+				List<MessageType> pMessageTypes = messageTypeMap.get(messageProjectType);
+				List<MessageType> dMessageTypes = messageTypeMap.get(MessageProjectType.DEFAULT);
+				projectMessageTypes = WenwoCollectionUtils.mergeList(pMessageTypes, dMessageTypes, "typeName");
+				
+				List<WeiboShareType> pShareTypes = shareTypeMap.get(messageProjectType);
+				List<WeiboShareType> dShareTypes = shareTypeMap.get(MessageProjectType.DEFAULT);
+				projectShareTypes = WenwoCollectionUtils.mergeList(pShareTypes, dShareTypes, "typeName");
+			} 
+//			else {
+//				//该项目无私有变量，只需要私有消息类型进行模板替换
+//				projectMessageTypes = messageTypeMap.get(messageProjectType);
+//				projectShareTypes = shareTypeMap.get(messageProjectType);
+//			}
+			// END 12.19
+			
+			if(CollectionUtils.isEmpty(projectMessageTypes) && CollectionUtils.isEmpty(projectShareTypes)) {
+				continue;
+			}
+			
+			ProjectChannel defaultChannel = channelMap.get(messageProjectType);
+			if(defaultChannel==null) {
+				defaultChannel = channelMap.get(MessageProjectType.DEFAULT);
+			}
+			//构建消息临时配置
+			MessageTempConfig tempConfig = new MessageTempConfig(messageProjectType, projectMessageTypes, projectShareTypes, defaultChannel);
+			
+			//替代项目模板
+			replaceProjectTemplates(messageProjectType, projectMessageTypes, tempConfig, templateReplacer);
+			
+			//替代微博同步模板
+			replaceWeiboShareTemplates(messageProjectType, projectShareTypes, tempConfig, templateReplacer);
+			
+			tempConfigList.add(tempConfig);
+		}
+		
+		logger.info("变量替换完毕");
+		
+		this.reloadMessageTempConfig(tempConfigList);
+		this.changeNeedLoadStatus();
+		logger.info("已保存新的临时配置，reload结束");
+	}
+	
+	public void reloadMessageTempConfig(List<MessageTempConfig> messageTempConfigList) {
+		if(messageTempConfigList == null || messageTempConfigList.size() <= 0){
+			return;
+		}
+		messageTypeDao.dropMessageTempConfig();
+		messageTypeDao.insertMessageTempConfig(messageTempConfigList);
+	}
+	
+	public void changeNeedLoadStatus() {
+		messageTypeDao.changeNeedLoadStatus();
+		shareDao.changeNeedLoadStatus();
+		variableDao.changeNeedLoadStatus();
+	}
+	
+	private List<ProjectChannel> loadAllChannel() {
+		return channelService.loadAllChannel();
+	}
+	private List<Variable> loadAllVariable() {
+		return variableService.getAllVariable();
+	}
+
+
+	private List<TextTemplate> loadAllTextTemplate() {
+		return internalTemplateService.loadAllTextTemplate();
+	}
+
+
+	private List<PicTemplate> loadAllPicTemplate() {
+		return internalTemplateService.loadAllPicTemplate();
+	}
+
+
+	private List<MessageType> loadAllMessageTypes() {
+		return messageTypeService.loadAllMessageTypes();
+	}
+
+
+	private List<WeiboShareType> loadAllShareTypes() {
+		return messageTypeService.loadAllShareTypes();
+	}
+
+	private void replaceWeiboShareTemplates(MessageProjectType messageProjectType, List<WeiboShareType> projectShareTypes,
+			MessageTempConfig tempConfig, TemplateReplacer templateReplacer) {
+		
+		if(CollectionUtils.isEmpty(projectShareTypes)){
+			return;
+		}
+		
+		for(WeiboShareType weiboShareType : projectShareTypes) {
+			String textTemplateId = weiboShareType.getTextTemplateId();
+			if(!StringUtils.isEmpty(textTemplateId)){
+				TextTemplate templateReplaced = templateReplacer.replateTextTemplate(textTemplateId, messageProjectType);
+				tempConfig.addTextTemplate(templateReplaced);
+			}
+			
+			String reTextTemplateId = weiboShareType.getReTextTemlateId();
+			if(!StringUtils.isEmpty(reTextTemplateId)){
+				TextTemplate templateReplaced = templateReplacer.replateTextTemplate(reTextTemplateId, messageProjectType);
+				tempConfig.addTextTemplate(templateReplaced);
+			}
+			
+			String picTemplateId = weiboShareType.getPicTemplateId();
+			if(!StringUtils.isEmpty(picTemplateId)){
+				PicTemplate templateReplaced = templateReplacer.replateImageTemplate(picTemplateId, messageProjectType);
+				tempConfig.addPicTemplate(templateReplaced);
+			}
+		}
+	}
+
+	/**
+	 * 替代项目模板
+	 * @param messageProjectType
+	 * @param projectMessageTypes
+	 * @param tempConfig
+	 * @param templateReplacer
+	 */
+	private void replaceProjectTemplates(MessageProjectType messageProjectType, List<MessageType> projectMessageTypes,
+			MessageTempConfig tempConfig, TemplateReplacer templateReplacer) {
+		for(MessageType messageType : projectMessageTypes) {
+			replaceProjectTemplate(messageProjectType, messageType.getInsiteAppTemplateInfo(),  tempConfig, templateReplacer);
+			replaceProjectTemplate(messageProjectType, messageType.getInsiteWebTemplateInfo(),  tempConfig, templateReplacer);
+			replaceProjectTemplate(messageProjectType, messageType.getPushTemplateInfo(), tempConfig, templateReplacer);
+			replaceProjectTemplate(messageProjectType, messageType.getWeiboTemplateInfo(), tempConfig, templateReplacer);
+			replaceProjectTemplate(messageProjectType, messageType.getPriMessageTemplateInfo(), tempConfig, templateReplacer);
+			replaceProjectTemplate(messageProjectType, messageType.getSmsTemplateInfo(), tempConfig, templateReplacer);
+			replaceProjectTemplate(messageProjectType, messageType.getExternalTemplateInfo(),tempConfig,templateReplacer);
+		}
+	}
+	
+	private void replaceProjectTemplate(MessageProjectType messageProjectType, TemplateInfo templateInfo,
+			MessageTempConfig tempConfig, TemplateReplacer templateReplacer) {
+		if(templateInfo==null) {
+			return;
+		}
+		if( templateInfo.getTextTemplateId()!=null) {
+			TextTemplate templateReplaced = templateReplacer.replateTextTemplate(templateInfo.getTextTemplateId(), messageProjectType);
+			tempConfig.addTextTemplate(templateReplaced);
+		}
+		if( templateInfo.getPicTemplateId()!=null) {
+			PicTemplate templateReplaced = templateReplacer.replateImageTemplate(templateInfo.getPicTemplateId(), messageProjectType);
+			tempConfig.addPicTemplate(templateReplaced);
+		}
+	}
+
+}

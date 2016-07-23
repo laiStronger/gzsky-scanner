@@ -1,0 +1,912 @@
+package com.wenwo.message.controller;
+
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.web.servlet.ModelAndView;
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.reflect.TypeToken;
+import com.wenwo.message.api.IInternalConfigService;
+import com.wenwo.message.api.IInternalTemplateService;
+import com.wenwo.message.api.IMessageService;
+import com.wenwo.message.api.IMessageTypeService;
+import com.wenwo.message.entity.MessageParameter;
+import com.wenwo.message.entity.MessageParameter.IdType;
+import com.wenwo.message.enums.MainType;
+import com.wenwo.message.enums.MessageProjectType;
+import com.wenwo.message.model.MessageError;
+import com.wenwo.message.model.MessageInsite;
+import com.wenwo.message.model.MessageType;
+import com.wenwo.message.model.MessageType.MessageTypeChannel;
+import com.wenwo.message.model.MessageType.TemplateInfo;
+import com.wenwo.message.model.PicTemplate;
+import com.wenwo.message.model.PicTemplate.CutInfo;
+import com.wenwo.message.model.PicTemplate.ImageInfo;
+import com.wenwo.message.model.PicTemplate.LineInfo;
+import com.wenwo.message.model.PicTemplate.TextInfo;
+import com.wenwo.message.model.TextTemplate;
+import com.wenwo.platform.entity.WenwoUser;
+import com.wenwo.platform.exception.WenwoException;
+import com.wenwo.platform.service.IWenwoPlatformUserService;
+import com.wenwo.platform.types.project.SubprojectType;
+import com.wenwo.platform.types.user.AccountType;
+import com.wenwo.platform.utils.CheckUtils;
+
+/**
+ * 消息类型相关
+ * 
+ * @author shuangtai
+ * 
+ */
+public class MessageTypeController extends BaseController {
+
+	private static final Logger logger = LoggerFactory.getLogger(MessageTypeController.class);
+	
+	private IWenwoPlatformUserService wenwoPlatformUserService;
+	
+	
+	public IWenwoPlatformUserService getWenwoPlatformUserService() {
+		return wenwoPlatformUserService;
+	}
+
+	public void setWenwoPlatformUserService(
+			IWenwoPlatformUserService wenwoPlatformUserService) {
+		this.wenwoPlatformUserService = wenwoPlatformUserService;
+	}
+
+	public IInternalTemplateService getInternalTemplateService() {
+		return internalTemplateService;
+	}
+	
+	public IInternalConfigService internalConfigService;
+
+	public IInternalConfigService getInternalConfigService() {
+		return internalConfigService;
+	}
+
+	public void setInternalConfigService(IInternalConfigService internalConfigService) {
+		this.internalConfigService = internalConfigService;
+	}
+
+	public void setInternalTemplateService(IInternalTemplateService internalTemplateService) {
+		this.internalTemplateService = internalTemplateService;
+	}
+
+	private IMessageService messageService;
+	
+	private IMessageTypeService messageTypeService;
+
+	private IInternalTemplateService internalTemplateService;
+	
+	SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"); 
+
+	public ModelAndView shareView(HttpServletRequest request, HttpServletResponse response) {
+		ModelAndView mv = new ModelAndView("messageType/share_msg");
+		MessageProjectType[] types = MessageProjectType.values();
+		mv.addObject("project_types", types);
+
+		MainType[] mainTypes = MainType.values();
+		mv.addObject("main_types", mainTypes);
+		return mv;
+	}
+
+	/**
+	 * 消息类型配置
+	 * @param request
+	 * @param response
+	 * @return
+	 */
+	public ModelAndView templateView(HttpServletRequest request, HttpServletResponse response) {
+		ModelAndView mv = new ModelAndView("messageType/type_view");
+		MainType[] mainTypes = MainType.values();
+		mv.addObject("mainTypes", mainTypes);
+
+		MainType requestMainType = getMainTypeFromRequest(request);
+		MessageProjectType messageProjectType = getProjectType(request);
+		List<MessageType> messageTypeList = messageTypeService.getMessageTypeList(requestMainType, messageProjectType);
+
+		mv.addObject("message_types", messageTypeList);
+
+		return mv;
+	}
+
+	public ModelAndView newMessageTypeView(HttpServletRequest request, HttpServletResponse response) {
+		ModelAndView mv = new ModelAndView("messageType/add_new_msy_type");
+		
+		String project = request.getParameter("project");
+		MessageProjectType projectType = getMessageProjectType(project);
+		mv.addObject("project_type", projectType);
+
+		MainType[] mainTypes = MainType.values();
+		mv.addObject("main_types", mainTypes);
+		return mv;
+	}
+
+	private MessageProjectType getMessageProjectType(String project) {
+		if(StringUtils.isEmpty(project)){
+			return MessageProjectType.DEFAULT;
+		}
+		return MessageProjectType.valueOf(project);
+	}
+
+	public ModelAndView getMessageTypeList(HttpServletRequest request, HttpServletResponse response) {
+		ModelAndView mv = new ModelAndView("messageType/message_type_list");
+		String projectType = request.getParameter("projectType");
+		MessageProjectType projectTypeEnum = MessageProjectType.valueOf(projectType);
+		String mainType = request.getParameter("mainType");
+		MainType mainTypeEnum = StringUtils.isEmpty(mainType) ? null : MainType.valueOf(mainType);
+
+		List<MessageType> typeList = messageTypeService.getMessageTypeList(mainTypeEnum, projectTypeEnum);
+
+		mv.addObject("message_types", typeList);
+		return mv;
+	}
+
+	public void updateMessageTypeChannel(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		String messageTypeId = request.getParameter("messageTypeId");
+		if (StringUtils.isEmpty(messageTypeId)) {
+			logger.info("未传入有效消息类型id");
+			return;
+		}
+		String sinaAccGroupType = request.getParameter("sinaAccGroupType");
+		String sinaGroupName = request.getParameter("sinaGroupName");
+		String qqAccGroupType = request.getParameter("qqAccGroupType");
+		String qqGroupName = request.getParameter("qqGroupName");
+		int result = messageTypeService.updateMessageTypeChannel(messageTypeId, sinaAccGroupType, sinaGroupName,
+				qqAccGroupType, qqGroupName);
+		if (result > 0) {
+			Map<String, String> resultMap = new HashMap<String, String>();
+			resultMap.put("messageTypeId", messageTypeId);
+			this.printSuccess(response, resultMap);
+		} else {
+			this.printFailed(response, "更新失败");
+		}
+	}
+
+	@Deprecated
+	public void updateMessageTypeStatus(HttpServletRequest request, HttpServletResponse response) {
+		String messageTypeId = request.getParameter("messageTypeId");
+		if (StringUtils.isEmpty(messageTypeId)) {
+			logger.info("未传入有效消息类型id");
+			return;
+		}
+		// Status newStatusEnum = StringUtils.isEmpty(newStatus) ? Status.IN_USE : Status.valueOf(newStatus);
+		// MessageType messageType = messageTypeService.getMessageTypeById(messageTypeId);
+		// if(messageType != null && messageType.getStatus() != newStatusEnum){
+		// messageType.setStatus(newStatusEnum);
+		// messageTypeService.updateMessageType(messageType);
+		// }
+	}
+
+	public void deleteMessageType(HttpServletRequest request, HttpServletResponse response) {
+		String messageTypeId = request.getParameter("messageTypeId");
+		if (StringUtils.isEmpty(messageTypeId)) {
+			return;
+		}
+		messageTypeService.deleteMessageTypeById(messageTypeId);
+	}
+
+	/**
+	 * 添加消息类型
+	 * @param request
+	 * @param response
+	 * @throws Exception
+	 */
+	public void addNewMessageType(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		String jsonEncoded = request.getParameter("encoded");
+		String type = request.getParameter("type");
+		logger.info("leixing " + type);
+		JsonParser parser = new JsonParser();
+		JsonObject jsonObject = parser.parse(jsonEncoded).getAsJsonObject();
+
+		MessageType newMessageType = new MessageType();
+		String mainType = jsonObject.get("mainType").getAsString();
+		newMessageType.setMainType(MainType.valueOf(mainType));
+		String messageProjectType = jsonObject.get("projectType").getAsString();
+		newMessageType.setMessageProjectType(MessageProjectType.valueOf(messageProjectType));
+		String description = jsonObject.get("description").getAsString();
+		newMessageType.setDescription(description);
+		String typeName = jsonObject.get("typeName").getAsString();
+		newMessageType.setTypeName(typeName);
+
+		JsonObject insiteWebJson = jsonObject.get("insiteWebTemplateInfo").getAsJsonObject();
+		if (insiteWebJson != null && !insiteWebJson.isJsonNull()) {
+			TemplateInfo insiteWebTemplateInfo = new TemplateInfo();
+			boolean isNeed = insiteWebJson.get("isNeed").getAsBoolean();
+			insiteWebTemplateInfo.setIsNeed(isNeed);
+
+			if (isNeed) {
+				JsonElement contentJson = insiteWebJson.get("content");
+				String content = contentJson == null ? null : contentJson.getAsString().trim();
+				if (StringUtils.isEmpty(content)) {
+					logger.equals("信息不完整");
+					this.printSuccess(response, "信息不完整");
+					return;
+				}
+				TextTemplate textTemplate = internalTemplateService.createTextTemplate(content, "shuangtai.li");
+				String textTemplateId = textTemplate == null ? null : textTemplate.getId();
+				insiteWebTemplateInfo.setTextTemplateId(textTemplateId);
+			}
+
+			newMessageType.setInsiteWebTemplateInfo(insiteWebTemplateInfo);
+		}
+
+		JsonObject insiteAppJson = jsonObject.get("insiteAppTemplateInfo") == null ? null : jsonObject.get(
+				"insiteAppTemplateInfo").getAsJsonObject();
+		if (insiteAppJson != null) {
+			TemplateInfo insiteAppTemplateInfo = new TemplateInfo();
+			boolean isNeed = insiteAppJson.get("isNeed").getAsBoolean();
+			insiteAppTemplateInfo.setIsNeed(isNeed);
+
+			if (isNeed) {
+				JsonElement contentJson = insiteAppJson.get("content");
+				String content = contentJson == null ? null : contentJson.getAsString().trim();
+				if (StringUtils.isEmpty(content)) {
+					logger.equals("信息不完整");
+					this.printSuccess(response, "信息不完整");
+					return;
+				}
+
+				TextTemplate textTemplate = internalTemplateService.createTextTemplate(content, "shuangtai.li");
+				String textTemplateId = textTemplate == null ? null : textTemplate.getId();
+				insiteAppTemplateInfo.setTextTemplateId(textTemplateId);
+			}
+
+			newMessageType.setInsiteAppTemplateInfo(insiteAppTemplateInfo);
+		}
+
+		JsonObject pushTemplateJson = jsonObject.get("pushTemplateInfo") == null ? null : jsonObject.get(
+				"pushTemplateInfo").getAsJsonObject();
+		if (pushTemplateJson != null) {
+			TemplateInfo pushTemplateInfo = new TemplateInfo();
+			boolean isNeed = pushTemplateJson.get("isNeed").getAsBoolean();
+			pushTemplateInfo.setIsNeed(isNeed);
+
+			if (isNeed) {
+				JsonElement contentJson = pushTemplateJson.get("content");
+				String content = contentJson == null ? null : contentJson.getAsString().trim();
+				if (StringUtils.isEmpty(content)) {
+					logger.equals("信息不完整");
+					this.printSuccess(response, "信息不完整");
+					return;
+				}
+
+				TextTemplate textTemplate = internalTemplateService.createTextTemplate(content, "shuangtai.li");
+				String textTemplateId = textTemplate == null ? null : textTemplate.getId();
+				pushTemplateInfo.setTextTemplateId(textTemplateId);
+			}
+			newMessageType.setPushTemplateInfo(pushTemplateInfo);
+		}
+
+		boolean isSendCollMessage = jsonObject.get("isSendCollMessage") == null ? false : jsonObject.get(
+				"isSendCollMessage").getAsBoolean();
+		newMessageType.setIsSendCollMessage(isSendCollMessage);
+
+		//微博
+		JsonObject weiboTemplateInfo = jsonObject.get("weiboTemplateInfo") == null ? null : jsonObject.get(
+				"weiboTemplateInfo").getAsJsonObject();
+		if (weiboTemplateInfo != null) {
+
+			boolean isNeed = weiboTemplateInfo.get("isNeed").getAsBoolean();
+			String textTemplateId = null;
+			if (isNeed) {
+				String content = weiboTemplateInfo.get("weibo_template_text") == null ? null : weiboTemplateInfo
+						.get("weibo_template_text").getAsString().trim();
+				if (StringUtils.isEmpty(content)) {
+					this.printFailed(response, "微博文本模版为空");
+					return;
+				}
+				TextTemplate textTemplate = internalTemplateService.createTextTemplate(content, "shuangtai.li");
+				textTemplateId = textTemplate == null ? null : textTemplate.getId();
+			}
+
+			MessageTypeChannel messageTypeChannel = this.getMessageTypeChannel(weiboTemplateInfo, newMessageType);
+
+			newMessageType.setMessageTypeChannel(messageTypeChannel);
+
+			JsonObject pic_template_info = weiboTemplateInfo.getAsJsonObject("pic_template_info");
+			PicTemplate picTemplate = getPicTemplate(pic_template_info);
+
+			PicTemplate dbTemplate = picTemplate == null ? null : internalTemplateService.savePicTemplate(picTemplate);
+			String dbTemplateId = dbTemplate == null ? null : dbTemplate.getId();
+
+			newMessageType.setWeiboTemplateInfo(new TemplateInfo(isNeed, dbTemplateId, textTemplateId));
+		}
+		
+		//私信
+		JsonObject priMessageTemplateInfo = jsonObject.get("priMessageTemplateInfo") == null ? null : jsonObject.get(
+				"priMessageTemplateInfo").getAsJsonObject();
+		if (priMessageTemplateInfo != null) {
+
+			boolean isNeed = priMessageTemplateInfo.get("isNeed").getAsBoolean();
+			String textTemplateId = null;
+			if (isNeed) {
+				String content = priMessageTemplateInfo.get("priMessage_template_text") == null ? null : priMessageTemplateInfo
+						.get("priMessage_template_text").getAsString().trim();
+				if (StringUtils.isEmpty(content)) {
+					this.printFailed(response, "私信文本模版为空");
+					return;
+				}
+				TextTemplate textTemplate = internalTemplateService.createTextTemplate(content, "laisq");
+				textTemplateId = textTemplate == null ? null : textTemplate.getId();
+			}
+
+			JsonObject pic_template_info = weiboTemplateInfo.getAsJsonObject("pic_template_info");
+			PicTemplate picTemplate = getPicTemplate(pic_template_info);
+
+			PicTemplate dbTemplate = picTemplate == null ? null : internalTemplateService.savePicTemplate(picTemplate);
+			String dbTemplateId = dbTemplate == null ? null : dbTemplate.getId();
+
+			newMessageType.setPriMessageTemplateInfo(new TemplateInfo(isNeed, dbTemplateId, textTemplateId));
+		}
+		
+		//短信
+		JsonObject smsTemplateInfoJson = jsonObject.get("smsTemplateInfo") == null ? null
+				: jsonObject.get("smsTemplateInfo").getAsJsonObject();
+		if(smsTemplateInfoJson!=null){
+			TemplateInfo smsTemplateInfo = new TemplateInfo();
+			boolean isNeed = smsTemplateInfoJson.get("isNeed").getAsBoolean();
+			smsTemplateInfo.setIsNeed(isNeed);
+			String textTemplateId = null;
+			if(isNeed){
+				String content = smsTemplateInfoJson.get("sms_template_text") ==null ? null:smsTemplateInfoJson.get("sms_template_text")
+						.getAsString().trim();
+				if(StringUtils.isEmpty(content)){
+					this.printFailed(response,"短信模板文本为空");
+					return;		
+				}
+				TextTemplate textTemplate = internalTemplateService.createTextTemplate(content, "chixiaqi");
+				textTemplateId = textTemplate == null ? null : textTemplate.getId();
+				smsTemplateInfo.setTextTemplateId(textTemplateId);
+				
+			}
+			newMessageType.setSmsTemplateInfo(smsTemplateInfo);
+		}
+		//阿里信息
+		JsonObject externalTemplateInfoJson = jsonObject.get("externalTemplateInfo") == null ? null
+				: jsonObject.get("externalTemplateInfo").getAsJsonObject();
+		if(externalTemplateInfoJson!=null){
+			TemplateInfo externalTemplateInfo=new TemplateInfo();
+			boolean isNeed=externalTemplateInfoJson.get("isNeed").getAsBoolean();
+			externalTemplateInfo.setIsNeed(isNeed);
+			String textTemplateId=null;
+			if(isNeed){
+				String content = externalTemplateInfoJson.get("external_template_text")==null?null:externalTemplateInfoJson.get("external_template_text")
+						.getAsString().trim();
+				if(StringUtils.isEmpty(content)){
+					this.printFailed(response,"阿里信息模板文本为空");
+					return;		
+				}
+				TextTemplate textTemplate=internalTemplateService.createTextTemplate(content, "chixiaqi");
+				textTemplateId = textTemplate == null ? null : textTemplate.getId();
+				externalTemplateInfo.setTextTemplateId(textTemplateId);
+			}
+			newMessageType.setExternalTemplateInfo(externalTemplateInfo);
+		}
+		messageTypeService.addNewMessageType(newMessageType);
+		this.printSuccess(response, "上传成功");
+	}
+
+	/**
+	 * @param weiboTemplateInfo
+	 * @return
+	 */
+	private MessageTypeChannel getMessageTypeChannel(JsonObject weiboTemplateInfo, MessageType newMessageType) {
+		if (weiboTemplateInfo == null || newMessageType == null) {
+			return null;
+		}
+
+		JsonObject messageTypeChannel = weiboTemplateInfo.getAsJsonObject("messageTypeChannel");
+		if (messageTypeChannel == null) {
+			return null;
+		}
+
+		if (messageTypeChannel.get("sinaAccGroupType") == null || messageTypeChannel.get("sinaGroupName") == null
+				|| messageTypeChannel.get("qqAccGroupType") == null || messageTypeChannel.get("qqGroupName") == null) {
+			return null;
+		}
+		String sinaAccGroupType = messageTypeChannel.get("sinaAccGroupType").getAsString().trim();
+		String sinaGroupName = messageTypeChannel.get("sinaGroupName").getAsString().trim();
+		String qqAccGroupType = messageTypeChannel.get("qqAccGroupType").getAsString().trim();
+		String qqGroupName = messageTypeChannel.get("qqGroupName").getAsString().trim();
+		return newMessageType.new MessageTypeChannel(sinaAccGroupType, sinaGroupName, qqAccGroupType, qqGroupName);
+	}
+
+	/**
+	 * @param pic_template_info
+	 * @return
+	 */
+	private PicTemplate getPicTemplate(JsonObject pic_template_info) {
+		if (pic_template_info == null) {
+			return null;
+		}
+
+		PicTemplate picTemplate = new PicTemplate();
+		String backPicId = pic_template_info.get("back_pic_id") == null ? null : pic_template_info.get("back_pic_id")
+				.getAsString();
+		picTemplate.setBackGroundPicId(backPicId);
+
+		if (pic_template_info.get("text_info") != null && JsonNull.INSTANCE != pic_template_info.get("text_info")) {
+			JsonArray textInfos = pic_template_info.get("text_info").getAsJsonArray();
+			List<TextInfo> textInfoList = GSON.fromJson(textInfos, new TypeToken<List<TextInfo>>() {
+			}.getType());
+			picTemplate.setTextInfos(textInfoList);
+		}
+
+		if (pic_template_info.get("pic_info") != null && JsonNull.INSTANCE != pic_template_info.get("pic_info")) {
+			JsonArray pic_infos = pic_template_info.get("pic_info").getAsJsonArray();
+			List<ImageInfo> picInfoList = GSON.fromJson(pic_infos, new TypeToken<List<ImageInfo>>() {
+			}.getType());
+			picTemplate.setImageInfos(picInfoList);
+		}
+
+		if (pic_template_info.get("line_info") != null && JsonNull.INSTANCE != pic_template_info.get("line_info")) {
+			JsonObject line_info = pic_template_info.get("line_info").getAsJsonObject();
+			if (line_info.get("x") != null && JsonNull.INSTANCE != line_info.get("x") && line_info.get("y") != null
+					&& JsonNull.INSTANCE != line_info.get("y") && line_info.get("height") != null
+					&& JsonNull.INSTANCE != line_info.get("height") && line_info.get("width") != null
+					&& JsonNull.INSTANCE != line_info.get("width")) {
+				LineInfo lineInfo = GSON.fromJson(pic_template_info.get("line_info"), LineInfo.class);
+				picTemplate.setLineInfo(lineInfo);
+			}
+		}
+
+		picTemplate.setInputor("shuangtai.li");
+
+		if (pic_template_info.get("cut_info_height") != null
+				&& JsonNull.INSTANCE != pic_template_info.get("cut_info_height")
+				&& pic_template_info.get("cut_info_width") != null
+				&& JsonNull.INSTANCE != pic_template_info.get("cut_info_width")) {
+			CutInfo cutInfo = new CutInfo();
+			if (!CheckUtils.isEmpty(pic_template_info.get("cut_info_height").getAsString())) {
+				int height = pic_template_info.get("cut_info_height").getAsInt();
+				cutInfo.setHeight(height);
+			}
+
+			if (!CheckUtils.isEmpty(pic_template_info.get("cut_info_width").getAsString())) {
+				int width = pic_template_info.get("cut_info_width").getAsInt();
+				cutInfo.setWidth(width);
+			}
+
+			picTemplate.setCutInfo(cutInfo);
+		}
+		return picTemplate;
+
+	}
+
+	/**
+	 * @param request
+	 * @return
+	 */
+	private MessageProjectType getProjectType(HttpServletRequest request) {
+		String messageProjectType = request.getParameter("messageProjectType");
+		if (messageProjectType == null || messageProjectType.trim().length() <= 0) {
+			return MessageProjectType.DEFAULT;
+		}
+		return MessageProjectType.valueOf(messageProjectType);
+	}
+
+	/**
+	 * @param request
+	 * @return
+	 */
+	private MainType getMainTypeFromRequest(HttpServletRequest request) {
+		String mainType = request.getParameter("mainType");
+		if (mainType == null || mainType.trim().length() <= 0) {
+			return null;
+		}
+		return MainType.valueOf(mainType);
+	}
+
+	public ModelAndView newMsgType(HttpServletRequest request, HttpServletResponse response) {
+		return new ModelAndView("template/new_msg");
+	}
+	
+	public void alterMessageType(HttpServletRequest request, HttpServletResponse response) throws Exception{
+		String messageTypeId = request.getParameter("id");
+		String weibo_notice = request.getParameter("weibo_notice");   //微博选项
+		String priMessage_notice = request.getParameter("priMessage_notice"); //私信选项
+		String sms_notice = request.getParameter("sms_notice");  //短信选项
+		String exter_notice = request.getParameter("exter_notice");
+		String weibo_template_phone_push = request.getParameter("weibo_template_phone_push");
+		String weibo_template_phone_need = request.getParameter("weibo_template_phone_need");
+		String weibo_template_web_need = request.getParameter("weibo_template_web_need");
+		MessageType messageType = messageTypeService.getMessageTypeById(messageTypeId);
+		TemplateInfo templateInfo = messageType.getInsiteWebTemplateInfo();
+		if(weibo_template_web_need.equals("true")){
+			templateInfo.setIsNeed(true);
+		}else{
+			templateInfo.setIsNeed(false);
+		}
+		messageType.setInsiteWebTemplateInfo(templateInfo);
+		templateInfo = messageType.getInsiteAppTemplateInfo();
+		if(weibo_template_phone_need.equals("true")){
+			templateInfo.setIsNeed(true);
+		}else{
+			templateInfo.setIsNeed(false);
+		}
+		messageType.setInsiteAppTemplateInfo(templateInfo);
+		templateInfo = messageType.getPushTemplateInfo();
+		if(weibo_template_phone_push.equals("true")){
+			templateInfo.setIsNeed(true);
+		}else{
+			templateInfo.setIsNeed(false);
+		}
+		messageType.setPushTemplateInfo(templateInfo);
+		
+		//微博
+		templateInfo = messageType.getWeiboTemplateInfo();
+		switch(weibo_notice)
+		{
+			case "allnot":
+				templateInfo.setIsNeed(false);
+				messageType.setWeiboTemplateInfo(templateInfo);
+				messageType.setIsSendCollMessage(false);
+				break;
+			case "weibo":
+				templateInfo.setIsNeed(true);
+				messageType.setIsSendCollMessage(false);
+				break;
+			/*case "set":
+				templateInfo.setIsNeed(false);
+				messageType.setIsSendCollMessage(true);
+				break;*/
+		}
+		
+		//私信
+		templateInfo = messageType.getPriMessageTemplateInfo();
+		
+		//防止私信模板为空
+		if(templateInfo != null) {
+			//私信图片，在修改动作时，设置初始化图片id
+			if(templateInfo.getPicTemplateId() == null) {
+				PicTemplate picTemplate = new PicTemplate();
+				picTemplate.setBackGroundPicId("839415807_540.jpg");
+				picTemplate.setTextInfos(null);
+				picTemplate.setImageInfos(null);
+				picTemplate.setLineInfo(null);
+				CutInfo cutInfo = new CutInfo();
+				cutInfo.setHeight(0);
+				cutInfo.setWidth(0);
+				picTemplate.setCutInfo(cutInfo);
+				
+				PicTemplate dbTemplate = internalTemplateService.savePicTemplate(picTemplate);
+				String dbTemplateId = dbTemplate == null ? null : dbTemplate.getId();
+				
+				templateInfo.setPicTemplateId(dbTemplateId);
+			}
+			
+			
+			switch(priMessage_notice){
+			case "allnot":
+				templateInfo.setIsNeed(false);
+				messageType.setPriMessageTemplateInfo(templateInfo);
+				break;
+			case "priMessage":
+				templateInfo.setIsNeed(true);
+				messageType.setPriMessageTemplateInfo(templateInfo);
+				break;
+			}
+		} else {
+			templateInfo = new TemplateInfo();
+			templateInfo.setIsNeed(false);
+			messageType.setPriMessageTemplateInfo(templateInfo);
+		}
+		
+		//短信模板
+		templateInfo = messageType.getSmsTemplateInfo();
+		if (templateInfo != null) {
+			switch (sms_notice) {
+			case "allnot":
+				templateInfo.setIsNeed(false);
+				messageType.setSmsTemplateInfo(templateInfo);
+				break;
+			case "sms":
+				templateInfo.setIsNeed(true);
+				messageType.setSmsTemplateInfo(templateInfo);
+				break;
+			}
+		}else{
+			templateInfo=new TemplateInfo();
+			templateInfo.setIsNeed(false);
+			messageType.setSmsTemplateInfo(templateInfo);
+		}
+		templateInfo = messageType.getExternalTemplateInfo();
+		if(templateInfo!=null){
+			switch(exter_notice){
+			 case "allnot":
+				 templateInfo.setIsNeed(false);
+				 messageType.setExternalTemplateInfo(templateInfo);
+				 break;
+			 case "exter":
+				 templateInfo.setIsNeed(true);
+				 messageType.setExternalTemplateInfo(templateInfo);
+				 break;
+				 
+			}
+		}else{
+			templateInfo=new TemplateInfo();
+			templateInfo.setIsNeed(false);
+			messageType.setExternalTemplateInfo(templateInfo);
+		}
+		messageTypeService.updateMessageType(messageType);
+		this.printSuccess(response, "修改成功");
+	}
+	
+	/**
+	 * 进入发送消息页面
+	 * @param request
+	 * @param response
+	 * @return
+	 */
+	public ModelAndView sendMsgView(HttpServletRequest request, HttpServletResponse response){
+		ModelAndView mav = new ModelAndView("messageType/send_msg");
+		MessageProjectType types[] = MessageProjectType.values();
+		SubprojectType spts[] = SubprojectType.values(); 
+		IdType idType[] = IdType.values();
+		
+		//消息类型名称typeName(默认的情况：default + wenwo)
+		MessageProjectType messageProjectType = getProjectType(request);
+		List<MessageType> messageTypeList = messageTypeService.getMessageTypeList(null,MessageProjectType.DEFAULT);
+		List<MessageType> messageTypeWenwoList = messageTypeService.getMessageTypeList(null,MessageProjectType.WENWO);
+		logger.info("messageProjectType：" + messageProjectType);
+		for(int i=0;i<messageTypeWenwoList.size();i++) {
+			messageTypeList.add(messageTypeWenwoList.get(i));
+		}
+		
+		mav.addObject("messageProjectTypes",messageTypeList);
+		mav.addObject("id_types",idType);
+		mav.addObject("message_types", types);
+		mav.addObject("subproject_types",spts);
+        		
+		return mav;
+	}
+	
+	/**
+	 * 发送消息
+	 * @param request
+	 * @param response
+	 * @throws Exception
+	 */
+	public void sendMsg(HttpServletRequest request, HttpServletResponse response)throws Exception{
+		String sendType = request.getParameter("sendType");
+		String sbj = request.getParameter("projectType");
+		String targetUid = request.getParameter("targetUid");
+		String it = request.getParameter("idType");
+		String passId = request.getParameter("passId");
+		String propertyKey = request.getParameter("propertyKey");
+		String propertyValue = request.getParameter("propertyValue");
+		String typename = request.getParameter("typename");
+		logger.info("typename:" + typename);
+		logger.info("sbj:" + sbj);
+		
+		MessageParameter mp = null;
+		if(it.equals("ALL")){
+		    mp = new MessageParameter(null,null);
+		}else{
+    		for(IdType idType : IdType.values()){
+    			if(it.equals(idType.name())){
+    				mp = new MessageParameter(passId,idType);
+    				break;
+    			}
+    		}
+		}
+		if(!StringUtils.isEmpty(propertyKey) || !StringUtils.isEmpty(propertyValue)){
+		    if(StringUtils.isEmpty(propertyKey) && StringUtils.isEmpty(propertyValue)){
+		        this.printSuccess(response, "额外信息键值对不匹配");
+		        return;
+		    }
+		    String [] propertyKeys = propertyKey.split(",");
+	        String [] propertyValues = propertyValue.split(",");
+	        if(propertyKeys.length == propertyValues.length){
+	            for(int i = 0; i < propertyKeys.length; i++){
+	                mp.addProperty(propertyKeys[i], propertyValues[i]);
+	            }
+	        }else{
+	            this.printSuccess(response, "额外信息键值对不匹配");
+	            return;
+	        }
+		}
+		SubprojectType projectType = null;
+		for(SubprojectType sbjs : SubprojectType.values()){
+			if(sbj.equals(sbjs.name())){
+				projectType = sbjs;
+				break;
+			}
+		}
+		String sendNum = "";
+		if(sendType.equals("message")){
+			sendNum =  messageService.sendMessage(typename, targetUid, projectType, mp);
+		}else{
+			sendNum = messageService.share(typename, targetUid, projectType, mp);
+		}
+		this.printSuccess(response, "发送成功,返回结果ID为："+sendNum);
+	}
+	
+	/**
+	 * 进入查询消息页面
+	 * @param request
+	 * @param response
+	 * @return
+	 */
+	public ModelAndView searchMsgView(HttpServletRequest request, HttpServletResponse response){
+		ModelAndView mav = new ModelAndView("messageType/search_msg");
+		return mav;
+	}
+	
+	/**
+	 * 查询消息
+	 * @param request
+	 * @param response
+	 * @return
+	 */
+	public void searchMsg(HttpServletRequest request, HttpServletResponse response){
+		String messageId = request.getParameter("messageId");
+		String targetUid = request.getParameter("targetUid");
+		
+		try {
+			if(targetUid.length() != 24) {  //需要转换为 问我用户id
+				WenwoUser wenwoUserBySINA = wenwoPlatformUserService.getUserByOpenUid(targetUid, AccountType.SINA);
+				WenwoUser wenwoUserByQQ = wenwoPlatformUserService.getUserByOpenUid(targetUid, AccountType.QQ);
+				if(wenwoUserBySINA != null) {
+					targetUid = wenwoUserBySINA.getId();
+				}
+				if(wenwoUserByQQ != null) {
+					targetUid = wenwoUserByQQ.getId();
+				}
+				logger.info("用户id为:{}",targetUid);
+			}
+		} catch (WenwoException e1) {
+			e1.printStackTrace();
+		}
+		//查询消息
+		List<MessageInsite> messageInsiteList = messageService.getMessageInsite(targetUid, messageId);
+		List<MessageError> messageErrorList = messageService.getMessageError(targetUid, messageId);
+		
+		//设置时间的显示
+		List<String> messageInsiteCreateTimeList = new ArrayList<String>();
+		List<String> messageErrorCreateTimeList = new ArrayList<String>();
+		for(MessageInsite messageInsite : messageInsiteList) {
+			Date createTime = messageInsite.getCreateTime();
+			String strCreateTime = sdf.format(createTime);
+			messageInsiteCreateTimeList.add(strCreateTime);
+
+		}
+		for(MessageError messageError : messageErrorList) {
+			Date createTime = messageError.getCreateTime();
+			String strCreateTime = sdf.format(createTime);
+			messageErrorCreateTimeList.add(strCreateTime);
+			
+		}
+		
+		try {
+			Map<String, Object> result = new HashMap<String, Object>();
+			Gson gson = new Gson();
+			result.put("messageInsiteList", messageInsiteList);
+			result.put("messageErrorList", messageErrorList);
+			
+			//设置时间
+			result.put("messageInsiteCreateTimeList", messageInsiteCreateTimeList);
+			result.put("messageErrorCreateTimeList", messageErrorCreateTimeList);
+			
+			response.setContentType("text/html;charset=utf-8");
+			response.setHeader("Charset", "UTF-8");
+			response.getWriter().println(gson.toJson(result));
+		} catch(Exception e) {
+			logger.error("error:{}",e);
+		}
+	}
+	
+	/**
+	 * 下拉联动
+	 * @param request
+	 * @param response
+	 * @return
+	 */
+	public void chainselect(HttpServletRequest request, HttpServletResponse response){
+		//项目类型
+		String projectType = request.getParameter("projectType");
+		logger.info("projectType:" + projectType);
+		//把SubprojectType转换为MessageProjectType
+		MessageProjectType mpt = null;
+		MessageProjectType messageProjectType[] = MessageProjectType.values();
+		for(int i=0;i<messageProjectType.length;i++) {
+			if(messageProjectType[i].toString().trim().equals(projectType)) {
+				mpt = MessageProjectType.valueOf(projectType);
+				break;
+			} 
+		}
+		logger.info("mpt：" + mpt);
+		
+		//获得MessageType集合(default和所传projecttype的结合)
+		List<MessageType> messageTypeList = new ArrayList<MessageType>();
+		if(mpt != null) {
+			messageTypeList = messageTypeService.getMessageTypeList(null,mpt);
+		}
+		List<MessageType> messageTypeDefaultList = messageTypeService.getMessageTypeList(null,MessageProjectType.DEFAULT);
+		
+		StringBuffer data = new StringBuffer("");
+		for(int i=0;i<messageTypeDefaultList.size();i++) {
+			data.append(messageTypeDefaultList.get(i).getTypeName() + ",");
+			logger.info("messageTypeDefaultList：" + messageTypeDefaultList.get(i).getTypeName());
+		}
+		for(int i=0;i<messageTypeList.size();i++) {
+			data.append(messageTypeList.get(i).getTypeName() + ",");
+			logger.info("messageTypeList：" + messageTypeList.get(i).getTypeName());
+		}
+		if(!data.equals("")){
+			data = new StringBuffer(data.substring(0, data.length() -1));
+		}
+		
+		//传参数到前端
+		try {
+			logger.info("data:{}",data);
+			response.getWriter().write(data.toString());
+		} catch (IOException e) {
+			logger.error("error:{}",e);
+		}
+		
+	}
+	
+	
+	/**
+	 * 更新消息到消息服务器
+	 * @param request
+	 * @param response
+	 * @return
+	 */
+	public void updateMsgToServer(HttpServletRequest request, HttpServletResponse response){
+		logger.info("更新到消息服务器");
+		String data = "false";
+		try {
+			internalConfigService.reloadConfiguration();
+			data = "true";
+			response.getWriter().write(data);
+		} catch(Exception e) {
+			logger.error("error:{}",e);
+			
+		}
+		logger.info("更新消息服务器成功");
+	}
+	
+	
+	public void replaceMsgToServer(HttpServletRequest request, HttpServletResponse response){
+		internalConfigService.reloadConfiguration();
+		internalConfigService.updateObjectStatusByNeedLoad();
+	}
+
+	public IMessageTypeService getMessageTypeService() {
+		return messageTypeService;
+	}
+
+	public void setMessageTypeService(IMessageTypeService messageTypeService) {
+		this.messageTypeService = messageTypeService;
+	}
+
+	public IMessageService getMessageService() {
+		return messageService;
+	}
+
+	public void setMessageService(IMessageService messageService) {
+		this.messageService = messageService;
+	}
+
+	public static void main(String args[]) {
+		String targetUid = "527515d4e4b0ac17cf3b3244"; 
+		System.out.println(targetUid.length());
+	}
+}

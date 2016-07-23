@@ -1,0 +1,16 @@
+body {
+	padding-top: 60px;
+	padding-bottom: 40px;
+}
+
+.sidebar-nav {
+	background: none repeat scroll 0 0 #CCCCCC;
+    bottom: 0;
+    left: 0;
+    padding: 9px 0;
+    position: fixed;
+    top: 44px;
+    transition: all 500ms ease 0s;
+    width: 150px;
+    z-index: 10;
+}

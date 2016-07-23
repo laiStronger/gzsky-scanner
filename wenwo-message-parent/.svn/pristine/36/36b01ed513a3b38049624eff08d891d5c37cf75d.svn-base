@@ -1,0 +1,350 @@
+package com.wenwo.message.service;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.util.CollectionUtils;
+import redis.clients.jedis.JedisPool;
+import com.wenwo.message.api.IMessageService;
+import com.wenwo.message.dao.IMessageDao;
+import com.wenwo.message.dao.IWeiboAtMessageDao;
+import com.wenwo.message.data.MessageData;
+import com.wenwo.message.data.ShareData;
+import com.wenwo.message.entity.MessageParameter;
+import com.wenwo.message.entity.OpenUserInfo;
+import com.wenwo.message.enums.MainType;
+import com.wenwo.message.helper.AndroidPushMessageHelper;
+import com.wenwo.message.model.MessageError;
+import com.wenwo.message.model.MessageInsite;
+import com.wenwo.message.model.SpecialWeiboLog;
+import com.wenwo.message.utils.PlatformMongoUtil;
+import com.wenwo.message.utils.RedisUtil;
+import com.wenwo.platform.types.WeiboType;
+import com.wenwo.platform.types.project.SubprojectType;
+import com.wenwo.platform.utils.CheckUtils;
+import com.wenwo.platform.utils.GenShortIdUtils;
+
+/**
+ * 此接口实现提供两类功能：
+ * 1）	仅仅用于接收消息，收到消息后生成一个消息ID返回给调用者，然后把数据存入队列，等待处理
+ * 		负责从队列里面取到数据进行分发处理的是：
+ * 		@see com.wenwo.message.redis.MessageQueueListener
+ * 2）	用于接收后台的reload配置的指令，接收到指令后，从mongodb里把配置信息加载到redis，再通知所有的消息服务节点从redis中去加载。
+ * 		负责接收从redis加载的指令的类是：
+ * 		@see com.wenwo.message.redis.ConfigChangePubsub.ConfigChangingSub
+ * @author StanleyDing
+ * 2013-9-16
+ * @since message2.0
+ *
+ */
+public class MessageServiceImpl implements IMessageService {
+	
+	private static final Logger logger = LoggerFactory.getLogger(MessageServiceImpl.class);
+	
+	@Autowired
+	private RedisUtil redisUtil;
+	
+	@Autowired
+	private PlatformMongoUtil platformMongoUtil;	
+	
+	@Autowired
+	private IMessageDao messageInsiteDao;
+	
+	@Autowired
+	private IWeiboAtMessageDao weiboAtMessageDao;
+	
+	@Autowired
+	private JedisPool jedisPool;
+	
+	@Autowired
+    private ThreadPoolTaskExecutor taskExecutor;
+	
+	@Autowired
+    private AndroidPushMessageHelper androidPushMessageHelper;
+	
+	/** 
+	 * 给单个用户发送消息，用户ID是问我的UID
+	 * 单个用户也会被封装成一个列表，以便后续消息逻辑统一处理，数据会被push到redis队列中
+	 * @see com.wenwo.message.redis.MessageQueueListener
+	 */
+	public String sendMessage(String messageType, String targetUid,
+			SubprojectType subprojectType, MessageParameter parameter) {
+		return sendMessage(messageType, Arrays.asList(targetUid), subprojectType, parameter);
+	}
+
+	/**
+	 * 给批量用户发送消息，用户ID是问我的UID
+	 * 这里直接把所有的数据直接push到redis中，
+	 * @see com.wenwo.message.redis.MessageQueueListener
+	 */
+	public String sendMessage(String messageType, List<String> targetUidList,
+			SubprojectType subprojectType, MessageParameter parameter) {
+		if(StringUtils.isEmpty(messageType) || CollectionUtils.isEmpty(targetUidList)){
+			return null;
+		}
+		
+//		String msgId = redisUtil.generateID(MSG_ID_KEY);
+		String msgId = null;
+		try {
+			msgId = GenShortIdUtils.generateShortId();
+			MessageData data = new MessageData(msgId, messageType, targetUidList, subprojectType, parameter);
+			redisUtil.pushMessageData(data);
+		} catch (Exception e) {
+			logger.error("发布消息到redis队列失败[{}]", e);
+		}
+		
+		return msgId;
+	}
+
+	/** 
+	 * 给单个用户发送消息，用户ID是微博的UID
+	 * 单个用户也会被封装成一个列表，以便后续消息逻辑统一处理，数据会被push到redis队列中
+	 * @see com.wenwo.message.redis.MessageQueueListener
+	 */
+	public String sendMessageWithOpenUid(String messageType,
+			OpenUserInfo targetOpenUser, SubprojectType subprojectType, MessageParameter parameter) {
+		return sendMessageWithOpenUid(messageType, Arrays.asList(targetOpenUser), subprojectType, parameter);
+	}
+
+	/** 
+	 * 给批量用户发送消息，用户ID是微博的UID
+	 * 这里直接把所有的数据直接push到redis中，
+	 * @see com.wenwo.message.redis.MessageQueueListener
+	 */
+	public String sendMessageWithOpenUid(String messageType,
+			List<OpenUserInfo> targetOpenUserList, SubprojectType subprojectType, MessageParameter parameter) {
+		String msgId = null;
+		try {
+			msgId = GenShortIdUtils.generateShortId();
+			MessageData data = new MessageData(msgId, messageType, targetOpenUserList, parameter, subprojectType);
+			redisUtil.pushMessageData(data);
+		} catch (Exception e) {
+			logger.error("发布消息到redis队列失败[{}]", e);
+		}
+		
+		return msgId;
+	}
+
+	/**
+	 * 为单个用户发送分享信息到微博，分享的应用场景和消息不同：
+	 * 1）是以用户自己的身份发一条微博
+	 * 2）每次肯定只发一个用户，即触发者本身
+	 */
+	public String share(String shareType, String actionUid, SubprojectType subprojectType, MessageParameter parameter) {
+		String id = null;
+		try {
+			id = GenShortIdUtils.generateShortId();
+			ShareData data = new ShareData(id, shareType, actionUid, subprojectType, parameter);
+			redisUtil.pushShareData(data);
+		} catch (Exception e) {
+			logger.error("发布分享消息到redis队列失败[{}]", e);
+		}
+		
+		return id;
+	}
+
+	
+	
+	@Override
+	public Page<MessageInsite> getMessagesList(String userId, MainType mainType, Pageable pageInfo) {
+		//取用户的站内消息并标记为已读
+		final Page<MessageInsite> messagePage = messageInsiteDao.getMessagesList(userId, mainType, pageInfo);
+		
+        taskExecutor.submit(new Runnable() {
+            @Override
+            public void run() {
+            	setMessageRead(messagePage);
+            }
+        });
+        
+		return messagePage;
+	}
+	
+	/**
+	 * @param dataList
+	 */
+	@Override
+	public void setMessageRead(Page<MessageInsite> messagePage) {
+		if(messagePage == null || CheckUtils.isEmptyCollection(messagePage.getContent())){
+			return;
+		}
+		List<String> idList = new ArrayList<String>();
+		for(MessageInsite message : messagePage.getContent()){
+			if(!message.isRead()){
+				idList.add(message.getId());
+			}
+		}
+		
+		this.setMessageRead(idList);
+	}
+
+	@Override
+	public void setMessageRead(List<String> idList){
+		if(idList == null || idList.size() <= 0){
+			return;
+		}
+		messageInsiteDao.setMessageRead(idList);
+	}
+
+	@Override
+	public int getUnreadMessageCount(String userId, MainType type){
+		return messageInsiteDao.getUnreadMessageCount(userId, type, false);
+	}
+
+	@Override
+	public Map<MainType, Integer> getUnreadMessageCount(String userId){
+		return messageInsiteDao.getUnreadMessageCountByType(userId, false);
+	}
+
+	/**
+	 * 手机未读消息
+	 */
+	@Override
+	public int getMobileUnreadMessageCount(String userId, MainType type) {
+		return messageInsiteDao.getUnreadMessageCount(userId, type, true,0);
+	}
+	
+	/**
+	 * 手机未读消息（微问医生）
+	 */
+	@Override
+	public int getMobileUnreadMessageCount(String userId, MainType type,int subProjectType) {
+		return messageInsiteDao.getUnreadMessageCount(userId, type, true,subProjectType);
+	}
+
+	@Override
+	public Map<MainType, Integer> getMobileUnreadMessageCount(String userId) {
+		return messageInsiteDao.getUnreadMessageCountByType(userId, true);
+	}
+
+	@Override
+	public Page<MessageInsite> getMobileMessagesList(String userId, MainType messageType, Pageable pageInfo) {
+		//取用户的站内消息并标记为已读
+		final Page<MessageInsite> messagePage = messageInsiteDao.getMobileMessagesList(userId, messageType, pageInfo,0);
+	       taskExecutor.submit(new Runnable() {
+	            @Override
+	            public void run() {
+	            	setMessageRead(messagePage);
+	            }
+	        });
+		return messagePage;
+	}
+	
+	/**
+	 * 微问医生，取手机消息
+	 */
+	@Override
+	public Page<MessageInsite> getMobileMessagesList(String userId,MainType messageType, Pageable pageInfo, int type) {
+		//取用户的站内消息并标记为已读
+		final Page<MessageInsite> messagePage = messageInsiteDao.getMobileMessagesList(userId, messageType, pageInfo,type);
+	       taskExecutor.submit(new Runnable() {
+	            @Override
+	            public void run() {
+	            	setMessageRead(messagePage);
+	            }
+	        });
+		return messagePage;
+	}
+	
+	
+
+	@Override
+	public int setAnswerMsgRead(String userId, String messageType, List<String> answerIds) {
+		return messageInsiteDao.setAnswerMsgRead(userId, messageType, answerIds);
+	}
+
+	/**
+	 * 获取问题id
+	 */
+	@Override
+	public String getQuestionIdByWeiboId(String weiboId) {
+		//这个废弃了
+		//return weiboAtMessageDao.getQuestionIdByWeiboId(weiboId);
+		
+		//TODO:存储在mongoDB中
+		//return platformMongoUtil.getQuestionIdByWeiboId(weiboId);
+		
+		//存储在redis中
+		return redisUtil.getQuestionIdByWeiboId(weiboId);
+		
+	}
+
+	/**
+	 * 获取答案id
+	 */
+	@Override
+	public String getAnswerIdByWeiboId(String weiboId) {
+		//这个废弃了
+		//return weiboAtMessageDao.getAnswerIdByWeiboId(weiboId);
+		
+		//TODO:存储在mongoDB中
+		//return platformMongoUtil.getAnswerIdByWeiboId(weiboId);
+		
+		//存储在redis中
+		return redisUtil.getAnswerIdByWeiboId(weiboId);
+		
+	}
+
+	@Override
+	public List<Object> getAndroidPushMessage(String targetUid, SubprojectType subprojectType) {
+		List<Object> messageList = androidPushMessageHelper.getAndroidPushMessage(targetUid, subprojectType);
+		return messageList;
+	}
+	
+	/**
+	 * 根据用户Id和消息Id获取消息
+	 * @param targetUid
+	 * @param messageId
+	 * @return
+	 */
+	@Override
+	public List<MessageInsite> getMessageInsite(String targetUid, String messageId) {
+		return messageInsiteDao.getMessageInsite(targetUid, messageId);
+	}
+	
+	/**
+	 * 根据用户Id和消息Id获取错误日志消息
+	 * @param targetUid
+	 * @param messageId
+	 * @return
+	 */
+	@Override
+	public List<MessageError> getMessageError(String targetUid, String messageId) {
+		return messageInsiteDao.getMessageError(targetUid, messageId);
+	}
+
+	/**
+	 * 删除doctor集合消息的hash集合，根据用户id，和目标id（questionid或者answerid）
+	 * @param targetUidList
+	 * @param targetId
+	 */
+	@Override
+	public void delHashBatchMessage(List<String> targetUidList, String targetId) {
+		redisUtil.delHashBatchMessage(targetUidList,targetId);
+	}
+
+	/**
+	 * 保存SpecialWeiboLog到20数据库
+	 * @param weiboUid
+	 * @param weiboType
+	 * @param projectType
+	 * @param type
+	 */
+	public void saveSpecialWeiboLog(String weiboUid,WeiboType weiboType,SubprojectType projectType,int type) {
+        SpecialWeiboLog specialWeiboLog = new SpecialWeiboLog(weiboUid, weiboType,projectType,new Date(), type);
+        platformMongoUtil.saveSpecialWeiboLog(specialWeiboLog);
+	}
+	
+	
+	
+	
+}

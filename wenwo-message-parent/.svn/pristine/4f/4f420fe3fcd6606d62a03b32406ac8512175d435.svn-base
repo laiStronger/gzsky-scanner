@@ -1,0 +1,343 @@
+package com.wenwo.message.dao.impl;
+
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Sort.Direction;
+import org.springframework.data.mongodb.core.WenwoMongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import com.mongodb.AggregationOutput;
+import com.mongodb.BasicDBObject;
+import com.mongodb.DBCollection;
+import com.mongodb.DBObject;
+import com.wenwo.message.dao.IMessageDao;
+import com.wenwo.message.enums.MainType;
+import com.wenwo.message.fieldconstants.MessageConfigBaseFields;
+import com.wenwo.message.fieldconstants.MessageErrorFields;
+import com.wenwo.message.fieldconstants.MessageInsiteFields;
+import com.wenwo.message.model.MessageError;
+import com.wenwo.message.model.MessageInsite;
+import com.wenwo.message.model.MessageType;
+import com.wenwo.message.model.SMSMessageInfo;
+import com.wenwo.message.model.Variable;
+import com.wenwo.message.model.WeiboShareType;
+import com.wenwo.message.model.base.MessageConfigBase;
+import com.wenwo.message.utils.CommonUtils;
+import com.wenwo.platform.dao.util.IMongoUtil;
+import com.wenwo.platform.paging.PageableImpl;
+import com.wenwo.weibo4j.model.PrivateMessageInfo;
+
+/**
+ * @author shuangtai
+ *
+ */
+public class MessageDao extends BaseDao implements IMessageDao{
+
+	private final Logger logger = LoggerFactory.getLogger(getClass());
+	
+	private static final String _ID = "_id";
+	private static final String MESSAGE_INSITE_COLLECTION = "messages.insite";
+	private static final String MESSAGE_WEIBO_AT_COLLECTION = "messages.weiboAt";
+	private WenwoMongoTemplate mongoTemplate;
+	
+	@Override
+	public void saveMessage(String uniqueId, String messageField, Object messageFieldValue) {
+		Query query = Query.query(Criteria.where(_ID).is(uniqueId));
+		Update update = Update.update(messageField, messageFieldValue);
+		mongoTemplate.upsert(query, update, MESSAGE_INSITE_COLLECTION);
+	}
+	
+	public WenwoMongoTemplate getMongoTemplate() {
+		return mongoTemplate;
+	}
+
+	public void setMongoTemplate(WenwoMongoTemplate mongoTemplate) {
+		this.mongoTemplate = mongoTemplate;
+	}
+
+	@Override
+	public void saveWeiboAtMessage(String uniqueId, String messageField,
+			Object messageFieldValue) {
+		Query query = Query.query(Criteria.where(_ID).is(uniqueId));
+		Update update = Update.update(messageField, messageFieldValue);
+		mongoTemplate.upsert(query, update, MESSAGE_WEIBO_AT_COLLECTION);
+	}
+
+	@Override
+	public void updateMessageInsite(MessageInsite messageInsite) {
+		mongoUtil.update(messageInsite);
+	}
+
+	public IMongoUtil getMongoUtil() {
+		return mongoUtil;
+	}
+
+	public void setMongoUtil(IMongoUtil mongoUtil) {
+		this.mongoUtil = mongoUtil;
+	}
+
+	@Override
+	public Page<MessageInsite> getMessagesList(String userId, MainType mainType, Pageable pageInfo) {
+		Criteria criteria = Criteria.where(MessageInsiteFields.TARGET_UID).is(userId);
+		criteria.and(MessageInsiteFields.WEB_DATA).exists(true);
+		if(mainType != null){
+			criteria.and(MessageInsiteFields.MAIN_TYPE).is(mainType.name());
+		}
+		Query query = new Query(criteria);
+		Sort sort = new Sort(Direction.DESC, MessageInsiteFields.CREATE_TIME);
+		return mongoUtil.findPage(MessageInsite.class, query, pageInfo, sort);
+	}
+	
+	@Override
+	public void setMessageRead(List<String> idList) {
+		Query query = new Query();
+		query.addCriteria(Criteria.where(MessageInsiteFields.ID).in(idList));
+		query.addCriteria(Criteria.where(MessageInsiteFields.READ).is(Boolean.FALSE));
+		Update update = Update.update(MessageInsiteFields.READ, Boolean.TRUE);
+		mongoUtil.updateMulti(query, update, MessageInsite.class);
+	}
+
+	@Override
+	public int getUnreadMessageCount(String userId, MainType type, boolean isMobile) {
+		Criteria criteria = Criteria.where(MessageInsiteFields.TARGET_UID).is(userId);
+		criteria.and(MessageInsiteFields.READ).is(Boolean.FALSE);
+		if(type != null){
+			criteria.and(MessageInsiteFields.MAIN_TYPE).is(type.name());
+		}
+		if(isMobile){
+			criteria.and(MessageInsiteFields.MOBILE_DATA).exists(true);
+		}else{
+			criteria.and(MessageInsiteFields.WEB_DATA).exists(true);
+		}
+		return mongoUtil.getCount(MessageInsite.class, criteria);
+	}
+	
+	@Override
+	public int getUnreadMessageCount(String userId, MainType type, boolean isMobile,int subProjectType) {
+		Criteria criteria = Criteria.where(MessageInsiteFields.TARGET_UID).is(userId);
+		criteria.and(MessageInsiteFields.READ).is(Boolean.FALSE);
+		if(type != null){
+			criteria.and(MessageInsiteFields.MAIN_TYPE).is(type.name());
+		}
+		if(isMobile){
+			criteria.and(MessageInsiteFields.MOBILE_DATA).exists(true);
+		}else{
+			criteria.and(MessageInsiteFields.WEB_DATA).exists(true);
+		}
+		
+		if(subProjectType == 0) {  //原来的
+			criteria.and(MessageInsiteFields.SUBPROJECT_TYPE).ne("DOCTOR");
+		} else if(subProjectType == 1) { //微问医生
+			criteria.and(MessageInsiteFields.SUBPROJECT_TYPE).is("DOCTOR");
+		}
+		
+		return mongoUtil.getCount(MessageInsite.class, criteria);
+	}
+
+	@Override
+	public Map<MainType, Integer> getUnreadMessageCountByType(String userId, boolean isMobile) {
+		DBCollection coll = mongoTemplate.getCollection(MessageInsiteFields.COLLECTION_NAME);
+		
+		DBObject match = new BasicDBObject(MessageInsiteFields.TARGET_UID, userId);
+		match.put(MessageInsiteFields.MAIN_TYPE, new BasicDBObject("$exists", true));
+		match.put(MessageInsiteFields.READ, false);
+		
+		if(isMobile){
+			match.put(MessageInsiteFields.MOBILE_DATA, new BasicDBObject("$exists", true));
+		}else{
+			match.put(MessageInsiteFields.WEB_DATA, new BasicDBObject("$exists", true));
+		}
+		
+		DBObject matchCommand = new BasicDBObject("$match", match);
+		
+		DBObject groupCommandFields = new BasicDBObject("_id", "$" + MessageInsiteFields.MAIN_TYPE);
+		groupCommandFields.put("totalCount", new BasicDBObject("$sum", 1));
+		DBObject groupCommand = new BasicDBObject("$group", groupCommandFields);
+		
+		AggregationOutput output = coll.aggregate(matchCommand, groupCommand);
+		
+		Iterator<DBObject> iterator = output.results().iterator();
+		
+		Map<MainType, Integer> typeAndNumMap = new HashMap<MainType, Integer>();
+		while(iterator.hasNext()){
+			BasicDBObject result = (BasicDBObject)iterator.next();
+			MainType mainType = MainType.valueOf(result.getString("_id"));
+			int totalNum = result.getInt("totalCount");
+			typeAndNumMap.put(mainType, totalNum);
+		}
+		
+		return typeAndNumMap;
+	}
+
+	@Override
+	public int setAnswerMsgRead(String userId, String messageType, List<String> answerIds) {
+		Criteria criteria = Criteria.where(MessageInsiteFields.TARGET_UID).is(userId);
+		if(!StringUtils.isEmpty(messageType)){
+			criteria.and(MessageInsiteFields.MESSAGE_TYPE).is(messageType);
+		}
+		criteria.and(MessageInsiteFields.WEB_DATA_ANSWER_ID).in(answerIds);
+		criteria.and(MessageInsiteFields.READ).is(Boolean.FALSE);
+		Query query = new Query();
+		query.addCriteria(criteria);
+		Update update = Update.update(MessageInsiteFields.READ, Boolean.TRUE);
+		return mongoUtil.updateMulti(query, update, MessageInsite.class);
+	}
+
+	@Override
+	public Page<MessageInsite> getMobileMessagesList(String userId, MainType messageType, Pageable pageInfo) {
+		Criteria criteria = Criteria.where(MessageInsiteFields.TARGET_UID).is(userId);
+		criteria.and(MessageInsiteFields.MOBILE_DATA).exists(true);
+		if(messageType != null){
+			criteria.and(MessageInsiteFields.MAIN_TYPE).is(messageType.name());
+		}
+		Sort sort = new Sort(Direction.DESC, MessageInsiteFields.CREATE_TIME);
+		return mongoUtil.findPage(MessageInsite.class, new Query(criteria), pageInfo, sort);
+	}
+	
+	/**
+	 * 微问医生，手机站内消息
+	 */
+	@Override
+	public Page<MessageInsite> getMobileMessagesList(String userId,MainType messageType, Pageable pageInfo, int type) {
+		Criteria criteria = Criteria.where(MessageInsiteFields.TARGET_UID).is(userId);
+		criteria.and(MessageInsiteFields.MOBILE_DATA).exists(true);
+		if(messageType != null){
+			criteria.and(MessageInsiteFields.MAIN_TYPE).is(messageType.name());
+		}
+		
+		if(type == 0) {  //原来的
+			criteria.and(MessageInsiteFields.SUBPROJECT_TYPE).ne("DOCTOR");
+		} else if(type == 1) { //微问医生
+			criteria.and(MessageInsiteFields.SUBPROJECT_TYPE).is("DOCTOR");
+		}
+		
+		Sort sort = new Sort(Direction.DESC, MessageInsiteFields.CREATE_TIME);
+		return mongoUtil.findPage(MessageInsite.class, new Query(criteria), pageInfo, sort);
+	}
+
+	@Override
+	public void updateObjectStatusByNeedLoad() {
+		Query query = new Query(Criteria.where(MessageConfigBaseFields.STATUS).is(MessageConfigBase.Status.NEED_LOAD));
+		Update update = new Update();
+		update.set(MessageConfigBaseFields.STATUS, MessageConfigBase.Status.IN_USE);
+		mongoUtil.updateMulti(query, update, MessageType.class);
+		mongoUtil.updateMulti(query, update, WeiboShareType.class);
+		mongoUtil.updateMulti(query, update, Variable.class);
+	}
+
+	@Override
+	public void saveNewInsiteMessage(MessageInsite messageInsite) {
+		mongoUtil.save(messageInsite);
+	}
+
+	@Override
+	public boolean isMessageExist(String uniqueId) {
+		MessageInsite dbMessage = mongoUtil.getEntityById(MessageInsite.class, uniqueId);
+		return dbMessage != null;
+	}
+
+	/**
+	 * 根据用户Id和消息Id获取消息
+	 */
+	@Override
+	public List<MessageInsite> getMessageInsite(String targetUid, String messageId) {
+		Criteria criteria = Criteria.where(MessageInsiteFields.TARGET_UID).is(targetUid);
+		
+		if(messageId !=null && !messageId.trim().equals("")) {
+			criteria.and(MessageInsiteFields.MESSAGE_ID).is(messageId);
+		}
+		
+		//时间限制
+		Date now = new Date();
+		Date beginDate = CommonUtils.getLastWeek(now);
+		criteria.and(MessageInsiteFields.CREATE_TIME).gte(beginDate).lte(now);
+		
+		Query query = new Query(criteria);
+		Sort sort = new Sort(Direction.DESC, MessageInsiteFields.CREATE_TIME);
+		
+		Pageable pageInfo = new PageableImpl(1,1000);
+		Page<MessageInsite> allMessageInsite = mongoUtil.findPage(MessageInsite.class, query, pageInfo, sort);
+		List<MessageInsite> MessageInsiteList = allMessageInsite.getContent();
+		return MessageInsiteList;
+	}
+
+	/**
+	 * 根据用户Id和消息Id获取错误日志消息
+	 */
+	@Override
+	public List<MessageError> getMessageError(String targetUid, String messageId) {
+        Criteria criteria = Criteria.where(MessageErrorFields.TARGET_UID).is(targetUid);
+		
+		if(messageId !=null && !messageId.trim().equals("")) {
+			criteria.and(MessageErrorFields.MSG_ID).is(messageId);
+		}
+		
+		//时间限制
+		Date now = new Date();
+		Date beginDate = CommonUtils.getLastWeek(now);
+		criteria.and(MessageErrorFields.CREATE_TIME).gte(beginDate).lte(now);
+		
+		Query query = new Query(criteria);
+		Sort sort = new Sort(Direction.DESC, MessageErrorFields.CREATE_TIME);
+		
+		Pageable pageInfo = new PageableImpl(1,1000);
+		Page<MessageError> allMessageError = mongoUtil.findPage(MessageError.class, query, pageInfo, sort);
+		List<MessageError> MessageErrorList = allMessageError.getContent();
+		return MessageErrorList;
+	}
+
+
+	/**
+	 * 保存私信日志
+	 * @param privateMessageInfo
+	 */
+	public void savePriMessage(PrivateMessageInfo privateMessageInfo) {
+		if(privateMessageInfo.getCreateTime() != null && !privateMessageInfo.getCreateTime().equals("")) {
+			 try {
+				 DateFormat df = new SimpleDateFormat("EEE MMM dd HH:mm:ss 'CST' yyyy",Locale.US);
+				 Date date = df.parse(privateMessageInfo.getCreateTime());
+				 DateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+				 privateMessageInfo.setCreateTime(sdf.format(date));
+			} catch (ParseException e) {
+				logger.info("savePriMessage方法日期转换错误",e);
+				e.printStackTrace();
+			}
+		}
+		mongoUtil.save(privateMessageInfo);
+	}
+
+	/**
+	 * 保存短信
+	 * @param smsMessageInfo
+	 */
+	public void saveSMSMessage(SMSMessageInfo smsMessageInfo) {
+		if(smsMessageInfo.getCreateTime()!=null&&!smsMessageInfo.getCreateTime().equals("")){
+			try{
+				DateFormat df=new SimpleDateFormat("EEE MMM dd HH:mm:ss 'CST' yyyy",Locale.US);
+				Date date = df.parse(smsMessageInfo.getCreateTime());
+				DateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+				smsMessageInfo.setCreateTime(sdf.format(date));
+			}catch(ParseException e){
+				logger.info("saveSMSMessaged方法1日期转换错误",e);
+				e.printStackTrace();
+			}
+		}		
+		mongoUtil.save(smsMessageInfo);
+	}
+	
+	
+}

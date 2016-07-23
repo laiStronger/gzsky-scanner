@@ -1,0 +1,614 @@
+package com.wenwo.message.helper;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+import java.util.Set;
+import javapns.communication.exceptions.KeystoreException;
+import javapns.devices.Device;
+import javapns.devices.implementations.basic.BasicDevice;
+import javapns.notification.AppleNotificationServer;
+import javapns.notification.Payload;
+import javapns.notification.PushNotificationManager;
+import javapns.notification.PushNotificationPayload;
+import javapns.notification.PushedNotification;
+import javax.annotation.Resource;
+import org.apache.commons.lang.StringUtils;
+import org.apache.velocity.VelocityContext;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.mongodb.util.JSON;
+import com.tencent.xinge.Message;
+import com.wenwo.message.constants.TemplateConstants;
+import com.wenwo.message.data.PushData;
+import com.wenwo.message.request.MessageRequest;
+import com.wenwo.message.utils.AppleNotificationServerFactory;
+import com.wenwo.message.utils.XingeAppUtil;
+import com.wenwo.platform.doctor.service.IWeiwenDoctorService;
+import com.wenwo.platform.entity.UserDeviceToken;
+import com.wenwo.platform.entity.WenwoUser;
+import com.wenwo.platform.entity.doctor.DrUserDeviceToken;
+import com.wenwo.platform.service.IWenwoPlatformUserService;
+import com.wenwo.platform.types.project.SubprojectType;
+
+public class PhoneMessagePushHelper implements IPhonePushHelper {
+
+	private static Logger logger = LoggerFactory.getLogger(PhoneMessagePushHelper.class);
+
+	//微问
+	@Autowired
+	private AppleNotificationServerFactory appleNotificationServerFactory;
+	
+	//微问医生
+	@Autowired
+	private AppleNotificationServerFactory drAppleNotificationServerFactory;
+	
+	//患者
+	@Autowired
+	private AppleNotificationServerFactory patientAppleNotificationServerFactory;
+	
+	@Autowired
+	private JedisPool jedisPool;
+	
+	@Resource
+	private IWenwoPlatformUserService wenwoPlatformUserService;
+	
+	@Resource
+	private IWeiwenDoctorService weiwenDoctorService;  //druser表
+	
+	private long messageExpireTime;
+	
+	//Android用户在线过期时间
+	private long userExpireTime;
+	
+	public static final String ANDROID_ON_LINE_KEY = "a_online_key";
+	
+	public Payload genPayload(PushData pushData) {
+		try {
+			PushNotificationPayload payLoad = new PushNotificationPayload();
+			payLoad.addAlert(pushData.getContent()); // 消息内容
+			payLoad.addBadge(pushData.getCount() == 0 ? 1 : pushData.getCount()); // iphone应用图标上小红圈上的数值
+
+			payLoad.addCustomDictionary("questionId", pushData.getQuestionId());
+			payLoad.addCustomDictionary("answerId", pushData.getAnswerId());
+			payLoad.addCustomDictionary("userId", pushData.getUserId());
+
+			if (ifPushData())
+				payLoad.addSound("default"); // 铃音 默认
+
+			return payLoad;
+		} catch (JSONException e) {
+			logger.error("", e);
+		}
+		return null;
+	}
+
+	/**
+	 * 每天10-20点发通知带声音
+	 * 
+	 * @param time
+	 * @return
+	 */
+	private boolean ifPushData() {
+		Calendar curr = Calendar.getInstance();
+		int hour = curr.get(Calendar.HOUR_OF_DAY);
+		return hour >= 10 && hour < 20;
+	}
+
+	/**
+	 * 完成后可以直接生成PushedNotification发送，这里只保留发送逻辑
+	 */
+	@Override
+	public void send(PushData pushData, String token, boolean product) {
+		try {
+			List<PushedNotification> notifications = new ArrayList<PushedNotification>();
+			PushNotificationManager pushManager = new PushNotificationManager();
+			AppleNotificationServer ss = appleNotificationServerFactory.getCert(product);
+			pushManager.initializeConnection(ss);
+			// 发送push消息
+			Device device = new BasicDevice();
+			device.setToken(token);
+
+			PushedNotification notification = pushManager.sendNotification(device, genPayload(pushData), true);
+			notifications.add(notification);
+			List<PushedNotification> successfulNotifications = PushedNotification
+					.findSuccessfulNotifications(notifications);
+			if (successfulNotifications.size() > 0) {
+				logger.info("消息推送成功，token:{}", token);
+			} else {
+				logger.info("消息推送失败，token:{}", token);
+			}
+
+		} catch (KeystoreException e) {
+			logger.error("推送消息失败{}", e);
+		} catch (Throwable e) {// Throwable有点猛，是否要保留？
+			logger.error("{}", e);
+		}
+	}
+	
+	/**
+	 * 发送给iphone的push消息(patient)
+	 */
+	@Override
+	public void pushIphonePatientMessage(MessageRequest request, String msgContent) throws Exception {
+		VelocityContext velocityContext = request.getContext();
+		if(velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER) == null){
+			return;
+		}
+		
+		WenwoUser targetUser = (WenwoUser) velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER);
+		DrUserDeviceToken drUserDeviceToken = weiwenDoctorService.findDrUserDeviceTokenById(targetUser.getId());
+		if(drUserDeviceToken == null || StringUtils.isEmpty(drUserDeviceToken.getDeviceToken())){
+			logger.warn("患者用户{}缺失token,取消推送", targetUser.getId());
+			return;
+		}
+		String deviceToken = drUserDeviceToken.getDeviceToken();
+		String deviceType = drUserDeviceToken.getDeviceType();
+		String messageType = request.getMessageType();
+		
+		logger.info("患者user:{},deviceType:{}, deviceToken:{}", targetUser.getId(), deviceType, deviceToken);
+		//每个线程必须创建一个
+		PushNotificationManager pushManager = new PushNotificationManager();
+		
+		AppleNotificationServer ss = patientAppleNotificationServerFactory.getCert(true);
+		pushManager.initializeConnection(ss);
+		// 发送push消息
+		Device device = new BasicDevice(deviceToken);
+		
+		//pns通信类
+		PushNotificationPayload payLoad = new PushNotificationPayload(msgContent);
+		
+		//判断声音
+		if(XingeAppUtil.isInMessageType(messageType) && !XingeAppUtil.isInTime()) {
+			payLoad.addSound(""); 
+		} else {
+			payLoad.addSound("default"); // 铃音 默认(有声)
+		}
+		
+		PushedNotification notification = pushManager.sendNotification(device, payLoad);
+		
+		if(notification == null){
+			logger.error("推送患者iphone消息失败,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true,targetUser.getId());
+		} else if(!notification.isSuccessful()){
+			logger.error("推送患者iphone消息失败,messageContent:{},token:{},isProduct:{}, notifyResult:{},用户Id{}", msgContent, deviceToken, true, notification, targetUser.getId());
+		} else{
+			logger.info("推送患者iphone消息成功,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true, targetUser.getId());
+		}
+		
+		
+		/**
+		 * 经常由于tokentype 收不到消息
+		 * 使用正式token发送失败的话，在使用测试token发送一遍，确保成功
+		 */
+		PushNotificationManager testPushManager = new PushNotificationManager();
+		AppleNotificationServer testServer = patientAppleNotificationServerFactory.getCert(false);
+		testPushManager.initializeConnection(testServer);
+		// 发送push消息
+		PushedNotification testNotification = testPushManager.sendNotification(device, new PushNotificationPayload(msgContent));
+		
+		if(testNotification == null){
+			logger.error("testNotification,推送患者iphone消息失败,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true, targetUser.getId());
+		} else if(!testNotification.isSuccessful()){
+			logger.error("testNotification,推送患者iphone消息失败,messageContent:{},token:{},isProduct:{},notifyResult:{},用户Id{}", msgContent, deviceToken, true, testNotification, targetUser.getId());
+		} else{
+			logger.info("testNotification推送患者iphone消息成功,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true, targetUser.getId());
+		}
+	}
+	
+	/**
+	 * 发送给iphone的push消息(doctor)
+	 */
+	@Override
+	public void pushIphoneDoctorMessage(MessageRequest request, String msgContent) throws Exception {
+		VelocityContext velocityContext = request.getContext();
+		if(velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER) == null){
+			return;
+		}
+		
+		WenwoUser targetUser = (WenwoUser) velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER);
+		DrUserDeviceToken drUserDeviceToken = weiwenDoctorService.findDrUserDeviceTokenById(targetUser.getId());
+		if(drUserDeviceToken == null || StringUtils.isEmpty(drUserDeviceToken.getDeviceToken())){
+			logger.warn("微问医生用户{}缺失token,取消推送", targetUser.getId());
+			return;
+		}
+		String deviceToken = drUserDeviceToken.getDeviceToken();
+		String deviceType = drUserDeviceToken.getDeviceType();
+		String messageType = request.getMessageType();
+		
+		logger.info("微问医生user:{},deviceType:{}, deviceToken:{}", targetUser.getId(), deviceType, deviceToken);
+		//每个线程必须创建一个
+		PushNotificationManager pushManager = new PushNotificationManager();
+		
+		AppleNotificationServer ss = drAppleNotificationServerFactory.getCert(true);
+		pushManager.initializeConnection(ss);
+		// 发送push消息
+		Device device = new BasicDevice(deviceToken);
+		
+		//pns通信类
+		PushNotificationPayload payLoad = new PushNotificationPayload(msgContent);
+		
+		//判断声音
+		if(XingeAppUtil.isInMessageType(messageType) && !XingeAppUtil.isInTime()) {
+			payLoad.addSound(""); 
+		} else {
+			payLoad.addSound("default"); // 铃音 默认(有声)
+		}
+		
+		PushedNotification notification = pushManager.sendNotification(device, payLoad);
+		
+		if(notification == null){
+			logger.error("推送微问医生iphone消息失败,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true,targetUser.getId());
+		} else if(!notification.isSuccessful()){
+			logger.error("推送微问医生iphone消息失败,messageContent:{},token:{},isProduct:{}, notifyResult:{},用户Id{}", msgContent, deviceToken, true, notification, targetUser.getId());
+		} else{
+			logger.info("推送微问医生iphone消息成功,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true, targetUser.getId());
+		}
+		
+		
+		/**
+		 * 经常由于tokentype 收不到消息
+		 * 使用正式token发送失败的话，在使用测试token发送一遍，确保成功
+		 */
+		PushNotificationManager testPushManager = new PushNotificationManager();
+		AppleNotificationServer testServer = drAppleNotificationServerFactory.getCert(false);
+		testPushManager.initializeConnection(testServer);
+		// 发送push消息
+		PushedNotification testNotification = testPushManager.sendNotification(device, new PushNotificationPayload(msgContent));
+		
+		if(testNotification == null){
+			logger.error("testNotification,推送微问医生iphone消息失败,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true, targetUser.getId());
+		} else if(!testNotification.isSuccessful()){
+			logger.error("testNotification,推送微问医生iphone消息失败,messageContent:{},token:{},isProduct:{},notifyResult:{},用户Id{}", msgContent, deviceToken, true, testNotification, targetUser.getId());
+		} else{
+			logger.info("testNotification推送微问医生iphone消息成功,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true, targetUser.getId());
+		}
+	}
+	
+	/**
+	 * 发送给iphone的push消息(weiwen)
+	 */
+	@Override
+	public void pushIphoneMessage(MessageRequest request, String msgContent) throws Exception {
+		VelocityContext velocityContext = request.getContext();
+		if(velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER) == null){
+			return;
+		}
+		WenwoUser targetUser = (WenwoUser) velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER);
+		UserDeviceToken userDeviceToken = wenwoPlatformUserService.getUserDeviceToken(targetUser.getId());
+		if(userDeviceToken == null || StringUtils.isEmpty(userDeviceToken.getDeviceToken())){
+			logger.warn("用户{}缺失token,取消推送", targetUser.getId());
+			return;
+		}
+		String deviceToken = userDeviceToken.getDeviceToken();
+		String deviceType = userDeviceToken.getDeviceType();
+		
+		logger.info("user:{},deviceType:{}, deviceToken:{}", targetUser.getId(), deviceType, deviceToken);
+		//每个线程必须创建一个
+		PushNotificationManager pushManager = new PushNotificationManager();
+		
+		AppleNotificationServer ss = appleNotificationServerFactory.getCert(true);
+		pushManager.initializeConnection(ss);
+		// 发送push消息
+		Device device = new BasicDevice(deviceToken);
+		
+		//pns通信类
+		PushNotificationPayload payLoad = new PushNotificationPayload(msgContent);
+		//判断声音
+		if (ifPushData()) {
+			payLoad.addSound("default"); // 铃音 默认
+		} else {
+			payLoad.addSound(""); // 铃音 默认
+		}
+		PushedNotification notification = pushManager.sendNotification(device, payLoad);
+		
+		if(notification == null){
+			logger.error("推送iphone消息失败,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true,targetUser.getId());
+		} else if(!notification.isSuccessful()){
+			logger.error("推送iphone消息失败,messageContent:{},token:{},isProduct:{}, notifyResult:{},用户Id{}", msgContent, deviceToken, true, notification, targetUser.getId());
+		} else{
+			logger.info("推送iphone消息成功,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true, targetUser.getId());
+			return;
+		}
+		
+		
+		/**
+		 * 经常由于tokentype 收不到消息
+		 * 使用正式token发送失败的话，在使用测试token发送一遍，确保成功
+		 */
+		PushNotificationManager testPushManager = new PushNotificationManager();
+		AppleNotificationServer testServer = appleNotificationServerFactory.getCert(false);
+		testPushManager.initializeConnection(testServer);
+		// 发送push消息
+		PushedNotification testNotification = testPushManager.sendNotification(device, new PushNotificationPayload(msgContent));
+		
+		if(testNotification == null){
+			logger.error("testNotification,推送iphone消息失败,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true, targetUser.getId());
+		} else if(!testNotification.isSuccessful()){
+			logger.error("testNotification,推送iphone消息失败,messageContent:{},token:{},isProduct:{},notifyResult:{},用户Id{}", msgContent, deviceToken, true, testNotification, targetUser.getId());
+		} else{
+			logger.info("testNotification推送iphone消息成功,messageContent:{},token:{},isProduct:{},用户Id{}", msgContent, deviceToken, true, targetUser.getId());
+		}
+	}
+	
+	/**
+	 * 发送给android的push消息
+	 */
+	@Override
+	public void pushAndroidMessage(MessageRequest request, String msgContent) throws Exception{
+		if(StringUtils.isEmpty(msgContent)){
+			return;
+		}
+		
+		VelocityContext velocityContext = request.getContext();
+		if(velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER) == null){
+			return;
+		}
+		
+		WenwoUser targetUser = (WenwoUser) velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER);
+		String targetUserId = targetUser.getId();
+		SubprojectType subprojectType = request.getSubprojectType();
+		if(!isUserOnline(targetUserId, subprojectType)){
+			logger.info("用户[{}-{}]不在线，取消androidpush",targetUserId, subprojectType);
+			return;
+		}
+		
+		/**
+		 * 由于iphone推送字数的限制，android老版本的兼容，在代码中实现，
+		 * 下一次强制升级时，此处兼容去掉
+		 * "wenwoId":"{目标用户ID}","message":"您有一条新回答:{回答内容(20)}","questId":"{问题id}"
+		 */
+		String convertedContent = convert(msgContent);
+		
+		Jedis jedis = null;
+		try {
+			jedis = jedisPool.getResource();
+			long score = new Date().getTime();
+//			jedis.zadd(("aserver_" + subprojectType.name()+ "_" + targetUserId),score, msgContent);
+			//每个用户具有自己的一个保存消息的sortedset
+			String key = "apush_" + subprojectType.name()+ "_" + targetUserId;
+			jedis.zadd(key,score, convertedContent);
+			//设置过期时间，防止用户一直未读取，存留垃圾
+			jedis.expire(key, 252000);
+			logger.info("redisKey:{}, content:{}, Host:{}", key, convertedContent,jedis.getClient().getHost());
+		} catch (Exception e) {
+			logger.info("保存jedis报错", e);
+			throw e;
+		} finally {
+			if (jedis != null) {
+				jedisPool.returnResource(jedis);
+			}
+		}
+	}
+	
+	
+	/**
+	 * 发送给android手机（患者信鸽服务）
+	 */
+	@Override
+	public void pushPatientAndroidMessageByXinge(MessageRequest request, String msgContent) throws Exception{
+		if(StringUtils.isEmpty(msgContent)){
+			return;
+		}
+		
+		VelocityContext velocityContext = request.getContext();
+		if(velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER) == null){
+			return;
+		}
+		
+		WenwoUser targetUser = (WenwoUser) velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER);
+		DrUserDeviceToken drUserDeviceToken = weiwenDoctorService.findDrUserDeviceTokenById(targetUser.getId());
+		if(drUserDeviceToken == null || StringUtils.isEmpty(drUserDeviceToken.getDeviceToken())){
+			logger.warn("信鸽推送，用户{}缺失token,取消推送", targetUser.getId());
+			return;
+		}
+		
+		String deviceToken = drUserDeviceToken.getDeviceToken();
+		
+		//这里需要裁剪掉msgcontent里面的内容就可以
+		//JSONObject json = new JSONObject(msgContent);  
+		//JSONObject aps = new JSONObject(json.get("aps").toString());
+		//String alertMsg = aps.get("alert").toString();
+		
+		//开始调用信鸽内容
+		Message message = XingeAppUtil.xingeMessage(request,msgContent);
+		
+		//推送信鸽消息
+		JSONObject ret = XingeAppUtil.sendXingeMessage(message,deviceToken,"patient");
+		String code = ret.getString("ret_code");
+		if(code.equals("0")) {
+			logger.info("发送信鸽消息成功,返回结果:{},信鸽内容:{},token:{},用户Id:{}",ret, msgContent, deviceToken, targetUser.getId());
+		} else {
+			logger.info("发送信鸽消息失败,返回结果:{},信鸽内容:{},token:{},用户Id:{}",ret, msgContent, deviceToken, targetUser.getId());
+		}
+	}
+	
+	
+	/**
+	 * 发送给android手机（信鸽服务）
+	 */
+	@Override
+	public void pushAndroidMessageByXinge(MessageRequest request, String msgContent) throws Exception{
+		if(StringUtils.isEmpty(msgContent)){
+			return;
+		}
+		
+		VelocityContext velocityContext = request.getContext();
+		if(velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER) == null){
+			return;
+		}
+		
+		WenwoUser targetUser = (WenwoUser) velocityContext.get(TemplateConstants.CONTEXT_TARGET_USER);
+		DrUserDeviceToken drUserDeviceToken = weiwenDoctorService.findDrUserDeviceTokenById(targetUser.getId());
+		if(drUserDeviceToken == null || StringUtils.isEmpty(drUserDeviceToken.getDeviceToken())){
+			logger.warn("信鸽推送，用户{}缺失token,取消推送", targetUser.getId());
+			return;
+		}
+		
+		String deviceToken = drUserDeviceToken.getDeviceToken();
+		
+		//这里需要裁剪掉msgcontent里面的内容就可以
+		JSONObject json = new JSONObject(msgContent);  
+		JSONObject aps = new JSONObject(json.get("aps").toString());
+		String alertMsg = aps.get("alert").toString();
+		
+		//开始调用信鸽内容
+		Message message = XingeAppUtil.xingeMessage(request,alertMsg);
+		
+		//推送信鸽消息
+		JSONObject ret = XingeAppUtil.sendXingeMessage(message,deviceToken);
+		String code = ret.getString("ret_code");
+		if(code.equals("0")) {
+			logger.info("发送信鸽消息成功,返回结果:{},信鸽内容:{},token:{},用户Id:{}",ret, msgContent, deviceToken, targetUser.getId());
+		} else {
+			logger.info("发送信鸽消息失败,返回结果:{},信鸽内容:{},token:{},用户Id:{}",ret, msgContent, deviceToken, targetUser.getId());
+		}
+	}
+
+	/**
+	 * 由于iphone推送字数的限制，android老版本的兼容，在代码中实现，
+	 * 下一次强制升级时，此处兼容去掉
+	 * "wenwoId":"{目标用户ID}","message":"您有一条新回答:{回答内容(20)}","questId":"{问题id}"
+	 */
+	private String convert(String msgContent) {
+		JsonParser parser = new JsonParser();
+		JsonObject jsonObject = parser.parse(msgContent).getAsJsonObject();
+		jsonObject.add("wenwoId", jsonObject.get("userId"));
+		jsonObject.add("message", jsonObject.get("aps").getAsJsonObject().get("alert"));
+		jsonObject.add("questId", jsonObject.get("questionId"));
+		Gson gson = new Gson();
+		return gson.toJson(jsonObject);
+	}
+
+	/**
+	 * @param targetUserId
+	 * @param subprojectType
+	 * @return
+	 */
+	private boolean isUserOnline(String targetUserId, SubprojectType subprojectType) {
+		boolean isOnLine = false;
+		Jedis jedis = null;
+		try{
+			jedis = jedisPool.getResource();
+			String member = subprojectType.name() + targetUserId;
+			Double last_active_time = jedis.zscore(ANDROID_ON_LINE_KEY, member);
+			logger.info("member:{},score:{}", member, last_active_time);
+			if(last_active_time == null){
+				isOnLine = false;
+			}else{
+				//用户步活跃时间超时，将用户移除，并且返回不在线状态
+				long unActTime = new Date().getTime() - last_active_time.longValue();
+				
+				if(unActTime > this.userExpireTime){
+					isOnLine = false;
+					jedis.zrem(ANDROID_ON_LINE_KEY, member);
+				}else{
+					isOnLine = true;
+				}
+			}
+		}catch (Exception e) {
+			logger.error("获取用户在线状态失败{}", e);
+		}finally{
+			jedisPool.returnResource(jedis);
+		}
+		
+		logger.info("targetUid:{},SubprojectType:{},isOnline:{}", targetUserId, subprojectType, isOnLine);
+		return isOnLine;
+	}
+
+	@Override
+	public List<Object> getAndroidPushMessage(String targetUid, SubprojectType subprojectType) {
+		logger.info("获取android 用户{}-{}push消息", targetUid, subprojectType);
+		if(targetUid == null || subprojectType == null){
+			return null;
+		}
+		
+		Jedis jedis = null;
+		try{
+			jedis = jedisPool.getResource();
+			String key = "apush_" + subprojectType.name()+ "_" + targetUid;
+			
+			//更新在线时间戳
+			updateOnLineStatus(targetUid, subprojectType);
+			
+			long endTime = new Date().getTime();
+			long startTime = endTime - this.messageExpireTime;
+			Set<String> androidPushMessageSet = jedis.zrangeByScore(key, startTime, endTime);
+			
+			logger.info("android:uid: {}：{}", targetUid, androidPushMessageSet);
+			//移除已经取出的push消息
+			jedis.zremrangeByScore(key, 0, endTime);
+			
+			if(androidPushMessageSet != null && androidPushMessageSet.size() > 0){
+				return getJsonList(androidPushMessageSet);
+			}
+		}catch (Exception e) {
+			logger.error("获取push消息报错:{},{}" ,targetUid, e);
+		}finally{
+			jedisPool.returnResource(jedis);
+		}
+		return null;
+	}
+
+	private List<Object> getJsonList(Set<String> androidPushMessageSet) {
+		List<Object> jsonList = new ArrayList<Object>();
+		
+		for(String jsonElement : androidPushMessageSet){
+			jsonList.add(JSON.parse(jsonElement));
+		}
+		return jsonList;
+	}
+
+	/**
+	 * 用户轮询消息时，将用户放入 在线列表
+	 * @param targetUid
+	 * @param subprojectType
+	 */
+	private void updateOnLineStatus(String targetUid, SubprojectType subprojectType) {
+		String member = subprojectType.name() + targetUid;
+		long score = new Date().getTime();
+		Jedis jedis = null;
+		try{
+			logger.info("更新用户{}在线状态,score{}",member, score);
+			jedis = jedisPool.getResource();
+			jedis.zadd(ANDROID_ON_LINE_KEY, score, member);
+		}catch(Exception e){
+			logger.error("更新用户在线状态到jedis报错", e);
+		}finally{
+			jedisPool.returnResource(jedis);
+		}
+	}
+	
+
+	public void setAppleNotificationServerFactory(AppleNotificationServerFactory appleNotificationServerFactory) {
+		this.appleNotificationServerFactory = appleNotificationServerFactory;
+	}
+	
+	public void setDrAppleNotificationServerFactory(AppleNotificationServerFactory drAppleNotificationServerFactory) {
+		this.drAppleNotificationServerFactory = drAppleNotificationServerFactory;
+	}
+
+	public long getMessageExpireTime() {
+		return messageExpireTime;
+	}
+
+	public void setMessageExpireTime(long messageExpireTime) {
+		this.messageExpireTime = messageExpireTime;
+	}
+
+	public long getUserExpireTime() {
+		return userExpireTime;
+	}
+
+	public void setUserExpireTime(long userExpireTime) {
+		this.userExpireTime = userExpireTime;
+	}
+}

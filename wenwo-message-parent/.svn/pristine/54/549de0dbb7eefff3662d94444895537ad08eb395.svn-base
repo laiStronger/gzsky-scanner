@@ -1,0 +1,14 @@
+#public property
+
+#xingeApp property(demo)
+#accessId=2100012716
+#secretkey=09b0e181eab0ff24b435a6806eeb7766
+
+#xingeApp property(yangjian)
+#accessId=2100027389
+#secretkey=a8571256d7ddf13c0b80b11e35c32342
+
+
+#xingeApp property(wenwo)
+accessId=2100033622
+secretkey=8c351dc04db8e66ff3e550aaca850815

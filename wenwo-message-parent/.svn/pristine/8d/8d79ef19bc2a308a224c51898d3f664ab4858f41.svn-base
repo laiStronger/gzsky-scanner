@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/context classpath:/org/springframework/context/config/spring-context-3.1.xsd
+			http://www.springframework.org/schema/beans classpath:/org/springframework/beans/factory/xml/spring-beans-3.1.xsd
+			http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.2.xsd
+			http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-3.1.xsd" default-autowire="byName">
+	
+	 <context:component-scan base-package="com.wenwo.message"/>
+
+	
+	<bean id="phonePushHelper" class="com.wenwo.message.helper.PhoneMessagePushHelper" autowire="byName">
+		<property name="messageExpireTime" value="86400000"></property>
+		<property name="userExpireTime" value="43200000"></property>
+	</bean>
+	
+	<bean id="messageSender" class="com.wenwo.message.sender.MessageSender" autowire="byName"/>
+	<bean id="exceptionPrinter" class="com.wenwo.message.printer.ExceptionPrinter" autowire="byName"></bean>
+	
+	<!-- 构建上下文 -->
+	<bean id="contextBuilder" class="com.wenwo.message.builder.ContextBuilder" autowire="byName"></bean>
+	<bean id="drContextBuilder" class="com.wenwo.message.builder.DoctorContextBuilder" autowire="byName"></bean>
+</beans>

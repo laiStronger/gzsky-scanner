@@ -1,0 +1,108 @@
+package com.wenwo.message.endpoint.impl;
+
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+
+
+
+import org.apache.commons.lang.StringUtils;
+import org.apache.velocity.VelocityContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.missian.client.sync.SyncMissianProxyFactory;
+import com.wenwo.message.dao.IMessageDao;
+import com.wenwo.message.endpoint.AbstractMessageEndpoint;
+import com.wenwo.message.endpoint.filter.IEndpointFilter;
+import com.wenwo.message.model.SMSMessageInfo;
+import com.wenwo.message.request.MessageRequest;
+import com.wenwo.message.template.gen.ContentGenerator;
+import com.wenwo.platform.doctor.service.IWeiwenDoctorService;
+import com.wenwo.platform.entity.doctor.WeiwenDoctorUser;
+import com.wenwo.platform.types.project.SubprojectType;
+import com.wenwo.sms.api.ISMSService;
+import com.wenwo.sms.entity.SendResult;
+
+public class SMSMessageEndpoint extends AbstractMessageEndpoint{
+	
+	private final Logger logger = LoggerFactory.getLogger(getClass());
+	private final String textTemplateId;
+	private final ContentGenerator contentGenerator;	
+	private final IMessageDao messageDao;		
+	private final ISMSService smsService;	
+	private final IWeiwenDoctorService weiwenDoctorService;
+	   
+	public SMSMessageEndpoint(String textTemplateId,
+			ContentGenerator contentGenerator, IMessageDao messageDao,
+			ISMSService smsService, IWeiwenDoctorService weiwenDoctorService,
+			List<IEndpointFilter> pointFilterList) {
+		super(pointFilterList);
+		this.textTemplateId = textTemplateId;
+		this.contentGenerator = contentGenerator;
+		this.messageDao = messageDao;
+		this.smsService = smsService;
+		this.weiwenDoctorService = weiwenDoctorService;
+	}
+	
+	@Override
+	protected void doSending(MessageRequest request,
+			Map<String, Object> reponseMap) throws Exception {
+		// TODO Auto-generated method stub
+		//追问和新问题时避免私信与短信一起发送
+		if (request.getMessageType().equals("doctorNewQuestion")
+				|| request.getMessageType().equals("doctorQuestionMore")) {
+			if (!request.getContext().containsKey("isSmsSend")) {
+				return;
+			}
+		}
+		VelocityContext context = request.getContext();
+		String uid = request.getTargetUser().getId();
+		WeiwenDoctorUser doctorUser=weiwenDoctorService.findById(uid);
+		String phone=doctorUser.getTelephoneNumber();      
+		SubprojectType projectType = request.getSubprojectType();  //项目类型
+		String messageType = request.getMessageType(); //消息类型
+		logger.info("进入发短信接口,项目类型{},消息类型{}",projectType,messageType);
+		
+		String msgContent = contentGenerator.generateText(textTemplateId, context);  //调用模板生成短信内容
+		SMSMessageInfo info=null;
+   		if(StringUtils.isEmpty(msgContent)){
+   			logger.error("内容为空，不发送");
+   			return;
+   		}
+   		
+        info=sendMessage(phone,msgContent,messageType,uid);
+        
+        if(!info.isSendSuccess()){
+        	logger.info("发送短信失败");
+        	messageDao.saveSMSMessage(info);  //发送短信失败保存
+        }
+   		
+        
+   		
+	}
+	
+    /*
+     * 通过接口短信发送
+     */
+	private SMSMessageInfo sendMessage(String phoneNum,String content,String messageType,String uid){
+		SMSMessageInfo info=new SMSMessageInfo();
+		info.setPhoneNum(phoneNum);
+		info.setReceiver_id(uid);
+		info.setText(content);
+		info.setType(messageType);
+		info.setCreateTime(new Date().toString());
+		try{
+		SendResult result=smsService.sendSmsMessage(content,"18718575746");
+		}catch(Exception e){
+			logger.error("发送短信失败,电话号码为{}",phoneNum,e);
+			info.setSendSuccess(false);
+			return info;
+		}
+		info.setSendSuccess(true);
+		return info;
+	}
+	
+
+
+}

@@ -1,0 +1,17 @@
+com.wenwo.main
+com.wenwo.message.builder
+com.wenwo.message.chain
+com.wenwo.message.channel
+com.wenwo.message.constants
+com.wenwo.message.endpoint
+com.wenwo.message.endpoint.filter
+com.wenwo.message.endpoint.impl
+com.wenwo.message.helper
+com.wenwo.message.im4java
+com.wenwo.message.printer
+com.wenwo.message.redis
+com.wenwo.message.request
+com.wenwo.message.sender
+com.wenwo.message.template.gen
+com.wenwo.message.template.velocity
+com.wenwo.message.utils

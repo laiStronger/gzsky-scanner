@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xsi:schemaLocation="
+			http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
+			http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-2.5.xsd
+			http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-2.5.xsd">
+
+	<bean id="missianFactory" class="com.missian.client.sync.SyncMissianProxyFactory">
+		<constructor-arg index="0">
+			<bean class="com.missian.client.NetworkConfig">
+				<property name="readTimeout" value="60000" />
+				<property name="connectTimeout" value="60000" />
+				<property name="receiveBufferSize" value="2048" />
+			</bean>
+		</constructor-arg>
+	</bean>
+	
+	<bean id="messageService" factory-bean="missianFactory" factory-method="create">
+		<constructor-arg index="0" value="com.wenwo.message.api.IMessageService" type="java.lang.Class"/>
+		<constructor-arg index="1" value="${message.system.server}/messageService"/>
+	</bean>
+	
+	<bean id="internalConfigService" factory-bean="missianFactory" factory-method="create">
+		<constructor-arg index="0" value="com.wenwo.message.api.IInternalConfigService"/>
+		<constructor-arg index="1" value="${message.system.server}/internalConfigService"/>
+	</bean>
+
+	<bean id="messageTypeService" factory-bean="missianFactory" factory-method="create">
+		<constructor-arg index="0"
+			value="com.wenwo.message.api.IMessageTypeService" type="java.lang.Class" />
+		<constructor-arg index="1"
+			value="${message.system.server}/messageTypeService" />
+	</bean>
+	<bean id="variableService" factory-bean="missianFactory" factory-method="create">
+		<constructor-arg index="0"
+			value="com.wenwo.message.api.IVariableService" type="java.lang.Class" />
+		<constructor-arg index="1"
+			value="${message.system.server}/variableService" />
+	</bean>	
+	
+	<bean id="channelService" factory-bean="missianFactory" factory-method="create">
+		<constructor-arg index="0"
+			value="com.wenwo.message.api.IChannelService" type="java.lang.Class" />
+		<constructor-arg index="1"
+			value="${message.system.server}/channelService" />
+	</bean>	
+	
+	<bean id="shareService" factory-bean="missianFactory" factory-method="create">
+		<constructor-arg index="0"
+			value="com.wenwo.message.api.IShareService" type="java.lang.Class" />
+		<constructor-arg index="1"
+			value="${message.system.server}/shareService" />
+	</bean>	
+	
+	<bean id="internalTemplateService" factory-bean="missianFactory" factory-method="create">
+		<constructor-arg index="0"
+		value="com.wenwo.message.api.IInternalTemplateService" type="java.lang.Class" />
+		<constructor-arg index="1"
+		value="${message.system.server}/internalTemplateService" />
+	</bean>
+	
+	<bean id="imageService" factory-bean="missianFactory" factory-method="create">
+		<constructor-arg index="0" value="com.wenwo.bin.api.ImageService" type="java.lang.Class" />
+		<constructor-arg index="1" value="${gridfs.system.server}/imageService" />
+	</bean>
+	
+	<!-- 平台 -->
+	<bean id="wenwoPlatformUserService" factory-bean="missianFactory"
+		factory-method="create">
+		<constructor-arg index="0"
+			value="com.wenwo.platform.service.IWenwoPlatformUserService" type="java.lang.Class" />
+		<constructor-arg index="1"
+			value="${platform.system.server}/wenwoPlatformUserService" />
+	</bean>
+	
+</beans>
